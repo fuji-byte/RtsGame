@@ -10,12 +10,12 @@ import (
 )
 
 type IMemoryService interface {
-	CreateUser(lientId string, conn *websocket.Conn) error
-	DeleteUser(lientId string) error
+	CreateUser(clientId string, conn *websocket.Conn) error
+	DeleteUser(clientId string) error
 	UserNum() int
-	GetUser(Id string) (*map[string]*models.User, error)
-	GetUserFromRoom(Id string) (*map[string]*models.User, error)
+	GetUserByClientId(clientId string) (*map[string]*models.User, error)
 	MakeRoom(clientId string) (string, error)
+	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	JoinRoom(roomId string, user *models.User) error
 }
 
@@ -28,7 +28,7 @@ func NewMemoryService(memoryRepository repositories.IMemoryRepository) IMemorySe
 }
 
 func (s *MemoryService) CreateUser(clientId string, conn *websocket.Conn) error {
-	newUser := models.User{ID: clientId, Name: "none", Color: "blue", IsOnline: true, Conn: conn, RoomID: "-1"}
+	newUser := models.User{ID: clientId, Name: "guest", Color: "blue", IsOnline: true, Conn: conn, RoomID: "-1"}
 	return s.memoryRepository.CreateUser(&newUser)
 }
 
@@ -40,11 +40,11 @@ func (s *MemoryService) UserNum() int {
 	return s.memoryRepository.UserNum()
 }
 
-func (s *MemoryService) GetUser(Id string) (*map[string]*models.User, error) {
-	if Id == "all" {
+func (s *MemoryService) GetUserByClientId(clientId string) (*map[string]*models.User, error) {
+	if clientId == "all" {
 		return s.memoryRepository.GetAllUser()
 	} else {
-		user, err := s.memoryRepository.GetUser(Id)
+		user, err := s.memoryRepository.GetUserByClientId(clientId)
 		if err != nil {
 			return nil, err
 		}
@@ -55,13 +55,9 @@ func (s *MemoryService) GetUser(Id string) (*map[string]*models.User, error) {
 	}
 }
 
-func (s *MemoryService) GetUserFromRoom(Id string) (*map[string]*models.User, error) {
-	return s.memoryRepository.GetUserFromRoom(Id)
-}
-
 func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 	//clietIdのroomが存在していないか
-	user, err := s.memoryRepository.GetUser(clientId)
+	user, err := s.memoryRepository.GetUserByClientId(clientId)
 	if err != nil {
 		return "", err
 	}
@@ -73,6 +69,10 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 	room := s.memoryRepository.MakeRoom(roomId, clientId)
 	room.HostPlayer = (user)
 	return roomId, nil
+}
+
+func (s *MemoryService) GetUsersByRoomId(Id string) (*map[string]*models.User, error) {
+	return s.memoryRepository.GetUsersByRoomId(Id)
 }
 
 func (s *MemoryService) JoinRoom(roomId string, user *models.User) error {
@@ -88,22 +88,22 @@ func (s *MemoryService) JoinRoom(roomId string, user *models.User) error {
 	return nil
 }
 
-type SessionService struct {
-	sessionRepo repositories.SessionRepository
-}
+// type SessionService struct {
+// 	sessionRepo repositories.SessionRepository
+// }
 
-func NewSessionService(repo repositories.SessionRepository) *SessionService {
-	return &SessionService{sessionRepo: repo}
-}
+// func NewSessionService(repo repositories.SessionRepository) *SessionService {
+// 	return &SessionService{sessionRepo: repo}
+// }
 
-func (s *SessionService) Login(userID string, sessionData string) error {
-	return s.sessionRepo.SetSession(userID, sessionData)
-}
+// func (s *SessionService) Login(userID string, sessionData string) error {
+// 	return s.sessionRepo.SetSession(userID, sessionData)
+// }
 
-func (s *SessionService) Logout(userID string) error {
-	return s.sessionRepo.DeleteSession(userID)
-}
+// func (s *SessionService) Logout(userID string) error {
+// 	return s.sessionRepo.DeleteSession(userID)
+// }
 
-func (s *SessionService) GetSessionData(userID string) (string, error) {
-	return s.sessionRepo.GetSession(userID)
-}
+// func (s *SessionService) GetSessionData(userID string) (string, error) {
+// 	return s.sessionRepo.GetSession(userID)
+// }

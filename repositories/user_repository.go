@@ -1,13 +1,10 @@
 package repositories
 
 import (
-	"context"
 	"errors"
 	"log"
 	"sync"
-	"time"
 
-	"github.com/redis/go-redis/v9"
 	"main.go/models"
 )
 
@@ -16,8 +13,8 @@ type IMemoryRepository interface {
 	DeleteUser(clientId string) error
 	UserNum() int
 	GetAllUser() (*map[string]*models.User, error)
-	GetUser(Id string) (*models.User, error)
-	GetUserFromRoom(Id string) (*map[string]*models.User, error)
+	GetUserByClientId(Id string) (*models.User, error)
+	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	MakeRoom(roomId string, clientId string) *models.GameRoom
 	GetRoom(roomId string) (*models.GameRoom, error)
 }
@@ -36,10 +33,10 @@ func NewMemoryRepository(memoryUser map[string]*models.User, memoryCell map[stri
 func (s *MemoryRepository) CreateUser(user *models.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.memoryUser[user.ID] != nil {
+	if s.memoryUser[(*user).ID] != nil {
 		return errors.New("user already exists")
 	}
-	s.memoryUser[user.ID] = user
+	s.memoryUser[(*user).ID] = user
 	return nil
 }
 
@@ -72,7 +69,7 @@ func (s *MemoryRepository) GetAllUser() (*map[string]*models.User, error) {
 	return &s.memoryUser, nil
 }
 
-func (s *MemoryRepository) GetUser(Id string) (*models.User, error) {
+func (s *MemoryRepository) GetUserByClientId(Id string) (*models.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.memoryUser[Id]
@@ -82,7 +79,7 @@ func (s *MemoryRepository) GetUser(Id string) (*models.User, error) {
 	return user, nil
 }
 
-func (s *MemoryRepository) GetUserFromRoom(Id string) (*map[string]*models.User, error) {
+func (s *MemoryRepository) GetUsersByRoomId(Id string) (*map[string]*models.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	users, ok := s.memoryGameRoom[Id]
@@ -94,7 +91,7 @@ func (s *MemoryRepository) GetUserFromRoom(Id string) (*map[string]*models.User,
 
 func (s *MemoryRepository) MakeRoom(roomId string, clientId string) *models.GameRoom {
 	newRoom := &models.GameRoom{ID: roomId, Players: make(map[string]*models.User), Cells: make(map[string]*models.Cell), Started: false, TimeLeftSec: 120}
-	user, err := s.GetUser(clientId)
+	user, err := s.GetUserByClientId(clientId)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil {
@@ -113,28 +110,28 @@ func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
 	return room, nil
 }
 
-type SessionRepository interface {
-	SetSession(userID string, data string) error
-	GetSession(userID string) (string, error)
-	DeleteSession(userID string) error
-}
+// type SessionRepository interface {
+// 	SetSession(userID string, data string) error
+// 	GetSession(userID string) (string, error)
+// 	DeleteSession(userID string) error
+// }
 
-type redisSessionRepository struct {
-	client *redis.Client
-}
+// type redisSessionRepository struct {
+// 	client *redis.Client
+// }
 
-func NewRedisSessionRepository(client *redis.Client) SessionRepository {
-	return &redisSessionRepository{client: client}
-}
+// func NewRedisSessionRepository(client *redis.Client) SessionRepository {
+// 	return &redisSessionRepository{client: client}
+// }
 
-func (r *redisSessionRepository) SetSession(userID string, data string) error {
-	return r.client.Set(context.Background(), "session:"+userID, data, 24*time.Hour).Err()
-}
+// func (r *redisSessionRepository) SetSession(userID string, data string) error {
+// 	return r.client.Set(context.Background(), "session:"+userID, data, 24*time.Hour).Err()
+// }
 
-func (r *redisSessionRepository) GetSession(userID string) (string, error) {
-	return r.client.Get(context.Background(), "session:"+userID).Result()
-}
+// func (r *redisSessionRepository) GetSession(userID string) (string, error) {
+// 	return r.client.Get(context.Background(), "session:"+userID).Result()
+// }
 
-func (r *redisSessionRepository) DeleteSession(userID string) error {
-	return r.client.Del(context.Background(), "session:"+userID).Err()
-}
+// func (r *redisSessionRepository) DeleteSession(userID string) error {
+// 	return r.client.Del(context.Background(), "session:"+userID).Err()
+// }

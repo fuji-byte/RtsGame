@@ -1,8 +1,11 @@
 package models
 
-type Message struct {
-	Type    string `json:"type"`
-	RoomID  string `json:"roomId"`
-	Message string `json:"message"`
-	Error   error  `json:err`
-}
+// on db
+//logようにデータベースに保存するため
+// type Message struct {
+// 	Type    string
+// 	Option  string
+// 	RoomID  string
+// 	Message string
+// 	Error   error
+// }

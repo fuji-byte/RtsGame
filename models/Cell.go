@@ -1,5 +1,6 @@
 package models
 
+// on memory
 type Cell struct {
 	ID       string
 	PlayerID string

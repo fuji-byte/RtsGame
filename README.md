@@ -16,3 +16,8 @@ Redis クライアント確認(wsl)
 redis-cli
 keys \*
 get session:クライアント id
+
+
+作成予定機能
+guestでもトークンを生成してユーザー認証を行う
+フレンド機能
