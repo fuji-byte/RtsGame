@@ -65,9 +65,21 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 		return "", errors.New("user already in a Room")
 	}
 	roomId := uuid.New().String()
-	(*user).RoomID = roomId
-	room := s.memoryRepository.MakeRoom(roomId, clientId)
-	room.HostPlayer = (user)
+	//memoryの編集はrepositoryのほうがいいかも
+	err = s.memoryRepository.SetRoomId(user, roomId)
+	if err != nil {
+		return "", err
+	}
+
+	players := map[string]*models.User{
+		clientId: user,
+	}
+	newRoom := &models.GameRoom{ID: roomId, RoomName: "", Players: players, HostPlayer: user, Cells: make(map[string]*models.Cell), Started: false, TimeLeftSec: 120}
+	// user, err := s.GetUserByClientId(clientId)
+	_, err = s.memoryRepository.MakeRoom(newRoom, user)
+	if err != nil {
+		return "", err
+	}
 	return roomId, nil
 }
 
@@ -79,12 +91,13 @@ func (s *MemoryService) JoinRoom(roomId string, user *models.User) error {
 	if (*user).RoomID != "-1" {
 		return errors.New("user already in a Room")
 	}
-	room, err := s.memoryRepository.GetRoom(roomId)
+	// room, err := s.memoryRepository.GetRoom(roomId)
+	_, err := s.memoryRepository.JoinRoom(roomId, user)
 	if err != nil {
 		return err
 	}
-	room.Players[user.ID] = user
-	(*user).RoomID = roomId
+	// room.Players[user.ID] = user
+	// (*user).RoomID = roomId
 	return nil
 }
 

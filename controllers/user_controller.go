@@ -125,6 +125,8 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			broadcast(*room, "message", message)
 		case "match":
 			return
+		case "reconnect":
+			return
 		default:
 			conn.WriteMessage(websocket.TextMessage, []byte(`"message":"タイプが適切ではありません","error": "type Error"`))
 			continue

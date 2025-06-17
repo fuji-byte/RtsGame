@@ -15,8 +15,10 @@ type IMemoryRepository interface {
 	GetAllUser() (*map[string]*models.User, error)
 	GetUserByClientId(Id string) (*models.User, error)
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
-	MakeRoom(roomId string, clientId string) *models.GameRoom
-	GetRoom(roomId string) (*models.GameRoom, error)
+	MakeRoom(room *models.GameRoom, user *models.User) (*models.GameRoom, error)
+	// GetRoom(roomId string) (*models.GameRoom, error)
+	JoinRoom(roomId string, user *models.User) (*models.GameRoom, error)
+	// SetRoomId(user *models.User, roomId string) error
 }
 
 type MemoryRepository struct {
@@ -89,27 +91,35 @@ func (s *MemoryRepository) GetUsersByRoomId(Id string) (*map[string]*models.User
 	return &users.Players, nil
 }
 
-func (s *MemoryRepository) MakeRoom(roomId string, clientId string) *models.GameRoom {
-	newRoom := &models.GameRoom{ID: roomId, Players: make(map[string]*models.User), Cells: make(map[string]*models.Cell), Started: false, TimeLeftSec: 120}
-	user, err := s.GetUserByClientId(clientId)
+func (s *MemoryRepository) MakeRoom(room *models.GameRoom, user *models.User) (*models.GameRoom, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err != nil {
-		return nil
-	}
-	newRoom.Players[clientId] = user
-	s.memoryGameRoom[roomId] = newRoom
-	return newRoom
+	s.memoryGameRoom[(*room).ID] = room
+	(*user).RoomID = (*room).ID
+	return room, nil
 }
 
-func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
+func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*models.GameRoom, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	room := s.memoryGameRoom[roomId]
 	if room == nil {
 		return nil, errors.New("room not found")
 	}
+	(*room).Players[user.ID] = user
+	(*user).RoomID = roomId
 	return room, nil
 }
 
+// func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
+// 	room := s.memoryGameRoom[roomId]
+// 	if room == nil {
+// 		return nil, errors.New("room not found")
+// 	}
+// 	return room, nil
+// }
 // type SessionRepository interface {
 // 	SetSession(userID string, data string) error
 // 	GetSession(userID string) (string, error)
