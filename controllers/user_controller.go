@@ -97,16 +97,12 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			message := fmt.Sprintf(`"type":"roomId","roomId":"%v"`, roomId)
 			conn.WriteMessage(websocket.TextMessage, []byte(message))
 		case "joinRoom":
-			//usersだが、ここでは
-			users, err := c.service.GetUserByClientId(clientId)
+			//usersだが、ここではclient単体
+			user, err := c.service.GetUserByClientId(clientId)
 			if err != nil {
 				fmt.Println("no users:", err)
 				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームを作成できませんでした。","error": "get a user Error"`))
 				continue
-			}
-			var user *models.User
-			for _, tempUser := range *users {
-				user = tempUser
 			}
 			err = c.service.JoinRoom(receivedMsg.RoomID, user)
 			if err != nil {
@@ -124,9 +120,31 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			broadcast(*room, "roomNum", len(*room))
 			broadcast(*room, "message", message)
 		case "match":
-			return
+			//host playerがmatchを送信したら
+			user, err := c.service.GetUserByClientId(clientId)
+			if err != nil {
+				fmt.Println("no users:", err)
+				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"`))
+				continue
+			}
+			//playerが切断したとき、ホストだったらランダムに変更
+			err = c.service.StartGame(user)
+			if err != nil {
+				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"あなたはこのルームのホストではありません","error": "invalid host Error"`))
+				continue
+			}
+			room, err := c.service.GetUsersByRoomId(user.RoomID)
+			if err != nil {
+				fmt.Println("no users:", err)
+				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"`))
+				continue
+			}
+			broadcast(*room, "gameStart", "game start")
 		case "reconnect":
-			return
+			continue
+		case "observe":
+			// c.service.GetRoomInfo()
+			continue
 		default:
 			conn.WriteMessage(websocket.TextMessage, []byte(`"message":"タイプが適切ではありません","error": "type Error"`))
 			continue
@@ -136,7 +154,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 
 func (c *MemoryController) userNumControll() int {
 	//s.memoryService.userNum()を取得して、User全員にブロードキャスト
-	users, err := c.service.GetUserByClientId("all")
+	users, err := c.service.GetAllUser()
 	if err != nil {
 		fmt.Println("no users", err)
 		return -1

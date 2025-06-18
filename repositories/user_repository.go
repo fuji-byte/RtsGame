@@ -3,8 +3,11 @@ package repositories
 import (
 	"errors"
 	"log"
+	"math/rand"
 	"sync"
+	"time"
 
+	"github.com/google/uuid"
 	"main.go/models"
 )
 
@@ -16,9 +19,11 @@ type IMemoryRepository interface {
 	GetUserByClientId(Id string) (*models.User, error)
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	MakeRoom(room *models.GameRoom, user *models.User) (*models.GameRoom, error)
-	// GetRoom(roomId string) (*models.GameRoom, error)
+	GetRoom(roomId string) (*models.GameRoom, error)
 	JoinRoom(roomId string, user *models.User) (*models.GameRoom, error)
 	// SetRoomId(user *models.User, roomId string) error
+	StartGame(room *models.GameRoom) error
+	RunGame(room *models.GameRoom)
 }
 
 type MemoryRepository struct {
@@ -111,15 +116,67 @@ func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*models.G
 	return room, nil
 }
 
-// func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
-// 	s.mu.Lock()
-// 	defer s.mu.Unlock()
-// 	room := s.memoryGameRoom[roomId]
-// 	if room == nil {
-// 		return nil, errors.New("room not found")
-// 	}
-// 	return room, nil
-// }
+func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	room := s.memoryGameRoom[roomId]
+	if room == nil {
+		return nil, errors.New("room not found")
+	}
+	return room, nil
+}
+
+func (s *MemoryRepository) StartGame(room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	room.Started = true
+	//cellの初期化と、go funcでの試合開始、log保存開始
+	// rand.Seed(time.Now().UnixNano())
+	screenWidth := 360.0
+	screenHeight := 640.0
+	margin := 20.0
+	for _, client := range room.Players {
+		x := rand.Float64()*(screenWidth-2*margin) + margin
+		y := rand.Float64()*(screenHeight-2*margin) + margin
+
+		id := uuid.New().String()
+		cell := models.Cell{
+			ID:       id,
+			PlayerID: client.ID,
+			Hp:       10,
+			X:        x,
+			Y:        y,
+			Rank:     1,
+			Power:    1,
+		}
+		room.Cells[id] = &cell
+	}
+	// room.Cells
+	// go func
+	return nil
+}
+
+func (s *MemoryRepository) RunGame(room *models.GameRoom) {
+	updateTicker := time.NewTicker(30 * time.Millisecond)
+	endTimer := time.After(120 * time.Second)
+	defer updateTicker.Stop()
+
+	for {
+		select {
+		case <-updateTicker.C:
+			// 30msごとの処理（ゲームロジックなど）
+			//ユーザーから送信された情報を基に、updateに一時的に構造体を作成し、30msごとに更新する
+			// room.Update()
+
+		case <-endTimer:
+			// 120秒経過でルームを終了
+			log.Println("ルームのタイムアウトにより終了します:", room.ID)
+			// room.End()
+			return
+		}
+	}
+}
+
 // type SessionRepository interface {
 // 	SetSession(userID string, data string) error
 // 	GetSession(userID string) (string, error)

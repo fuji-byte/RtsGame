@@ -13,10 +13,13 @@ type IMemoryService interface {
 	CreateUser(clientId string, conn *websocket.Conn) error
 	DeleteUser(clientId string) error
 	UserNum() int
-	GetUserByClientId(clientId string) (*map[string]*models.User, error)
+	GetAllUser() (*map[string]*models.User, error)
+	GetUserByClientId(clientId string) (*models.User, error)
 	MakeRoom(clientId string) (string, error)
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	JoinRoom(roomId string, user *models.User) error
+	StartGame(user *models.User) error
+	GetRoomInfo(roomId string) (*models.GameRoom, error)
 }
 
 type MemoryService struct {
@@ -40,19 +43,16 @@ func (s *MemoryService) UserNum() int {
 	return s.memoryRepository.UserNum()
 }
 
-func (s *MemoryService) GetUserByClientId(clientId string) (*map[string]*models.User, error) {
-	if clientId == "all" {
-		return s.memoryRepository.GetAllUser()
-	} else {
-		user, err := s.memoryRepository.GetUserByClientId(clientId)
-		if err != nil {
-			return nil, err
-		}
-		tempMap := map[string]*models.User{
-			user.ID: user,
-		}
-		return &tempMap, nil
+func (s *MemoryService) GetAllUser() (*map[string]*models.User, error) {
+	return s.memoryRepository.GetAllUser()
+}
+
+func (s *MemoryService) GetUserByClientId(clientId string) (*models.User, error) {
+	user, err := s.memoryRepository.GetUserByClientId(clientId)
+	if err != nil {
+		return nil, err
 	}
+	return user, nil
 }
 
 func (s *MemoryService) MakeRoom(clientId string) (string, error) {
@@ -66,10 +66,10 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 	}
 	roomId := uuid.New().String()
 	//memoryの編集はrepositoryのほうがいいかも
-	err = s.memoryRepository.SetRoomId(user, roomId)
-	if err != nil {
-		return "", err
-	}
+	// err = s.memoryRepository.SetRoomId(user, roomId)
+	// if err != nil {
+	// 	return "", err
+	// }
 
 	players := map[string]*models.User{
 		clientId: user,
@@ -99,6 +99,32 @@ func (s *MemoryService) JoinRoom(roomId string, user *models.User) error {
 	// room.Players[user.ID] = user
 	// (*user).RoomID = roomId
 	return nil
+}
+
+func (s *MemoryService) StartGame(user *models.User) error {
+	//hostかどうか、ほかにプレイヤーが一人以上いるか
+	roomId := user.RoomID
+	room, err := s.memoryRepository.GetRoom(roomId)
+	if err != nil {
+		return err
+	}
+	if user.ID != room.HostPlayer.ID {
+		return errors.New("the user is not host")
+	}
+	if len(room.Players) <= 1 {
+		return errors.New("the room doesn't exist member")
+	}
+	//ルーム処理
+	s.memoryRepository.StartGame(room)
+	return nil
+}
+
+func (s *MemoryService) GetRoomInfo(roomId string) (*models.GameRoom, error) {
+	roomInfo, err := s.memoryRepository.GetRoom(roomId)
+	if err != nil {
+		return nil, err
+	}
+	return roomInfo, err
 }
 
 // type SessionService struct {
