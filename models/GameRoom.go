@@ -2,8 +2,12 @@ package models
 
 import "sync"
 
+// redisで保管予定
+// on memory
 type GameRoom struct {
-	ID          string
+	ID string `gorm:"primaryKey"`
+	// Key string
+	RoomName    string //interfaceでもよい.プレイヤーが指定するルーム番号
 	Players     map[string]*User
 	HostPlayer  *User
 	Cells       map[string]*Cell

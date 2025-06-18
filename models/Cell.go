@@ -1,11 +1,12 @@
 package models
 
+// on memory
 type Cell struct {
 	ID       string
 	PlayerID string
 	Rank     int
-	Cell     int
-	X        float32
-	Y        float32
+	Hp       int
+	X        float64
+	Y        float64
 	Power    int //Rankが高くなれば、Power(生産量が上がる)
 }
