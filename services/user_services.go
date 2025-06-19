@@ -115,8 +115,13 @@ func (s *MemoryService) StartGame(user *models.User) error {
 		return errors.New("the room doesn't exist member")
 	}
 	//ルーム処理
-	s.memoryRepository.StartGame(room)
-	go s.memoryRepository.RunGame(room)
+	err = s.memoryRepository.StartGame(room)
+	if err != nil {
+		return err
+	}
+	ch := make(chan *models.GameRoom)
+	go s.memoryRepository.TempRoom(ch, room)
+	go s.memoryRepository.RunGame(ch, room)
 	return nil
 }
 
