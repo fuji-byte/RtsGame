@@ -142,8 +142,12 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			broadcast(*room, "gameStart", "game start")
 		case "reconnect":
 			continue
+		case "playing":
+			// c.service.GetRoomInfo()
+			continue
 		case "observe":
 			// c.service.GetRoomInfo()
+			//終わるまでか、観戦キャンセルされるまでずっとブロードキャスト
 			continue
 		default:
 			conn.WriteMessage(websocket.TextMessage, []byte(`"message":"タイプが適切ではありません","error": "type Error"`))

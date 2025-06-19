@@ -138,7 +138,6 @@ func (s *MemoryRepository) StartGame(room *models.GameRoom) error {
 	for _, client := range room.Players {
 		x := rand.Float64()*(screenWidth-2*margin) + margin
 		y := rand.Float64()*(screenHeight-2*margin) + margin
-
 		id := uuid.New().String()
 		cell := models.Cell{
 			ID:       id,
@@ -156,9 +155,9 @@ func (s *MemoryRepository) StartGame(room *models.GameRoom) error {
 	return nil
 }
 
-func (s *MemoryRepository) RunGame(room *models.GameRoom) {
+func (s *MemoryRepository) RunGame(room *models.GameRoom) error {
 	updateTicker := time.NewTicker(30 * time.Millisecond)
-	endTimer := time.After(120 * time.Second)
+	endTimer := time.After(time.Duration(room.TimeLeftSec) * time.Second)
 	defer updateTicker.Stop()
 
 	for {
@@ -167,14 +166,24 @@ func (s *MemoryRepository) RunGame(room *models.GameRoom) {
 			// 30msごとの処理（ゲームロジックなど）
 			//ユーザーから送信された情報を基に、updateに一時的に構造体を作成し、30msごとに更新する
 			// room.Update()
-
+			// err :=
+			// if err != nil {
+			// 	return err
+			// }
 		case <-endTimer:
 			// 120秒経過でルームを終了
 			log.Println("ルームのタイムアウトにより終了します:", room.ID)
 			// room.End()
-			return
+			return nil
 		}
 	}
+}
+
+func (s *MemoryRepository) TempRoom(room *models.GameRoom) error {
+	var tempRoom models.GameRoom
+	realRoom := s.memoryGameRoom[room.ID]
+	tempRoom = *realRoom
+	return nil
 }
 
 // type SessionRepository interface {

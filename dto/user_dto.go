@@ -15,3 +15,11 @@ type MessageOutput struct {
 	Message string `json:"message"`
 	Error   error  `json:"err"`
 }
+
+type GameRoomInput struct {
+	RoomName string //interfaceでもよい.プレイヤーが指定するルーム番号
+	// Cells map[string]*models.Cell
+	X      float64
+	Y      float64
+	CellId string
+}

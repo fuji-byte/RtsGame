@@ -116,6 +116,7 @@ func (s *MemoryService) StartGame(user *models.User) error {
 	}
 	//ルーム処理
 	s.memoryRepository.StartGame(room)
+	go s.memoryRepository.RunGame(room)
 	return nil
 }
 
@@ -126,6 +127,11 @@ func (s *MemoryService) GetRoomInfo(roomId string) (*models.GameRoom, error) {
 	}
 	return roomInfo, err
 }
+
+// func (s *MemoryService) RunGame(room *models.GameRoom) error {
+
+// 	go s.memoryRepository.RunGmae()
+// }
 
 // type SessionService struct {
 // 	sessionRepo repositories.SessionRepository
