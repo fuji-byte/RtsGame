@@ -22,10 +22,12 @@ type IMemoryRepository interface {
 	GetRoom(roomId string) (*models.GameRoom, error)
 	JoinRoom(roomId string, user *models.User) (*models.GameRoom, error)
 	// SetRoomId(user *models.User, roomId string) error
-	StartGame(room *models.GameRoom) error
-	TempRoom(ch chan *models.GameRoom, room *models.GameRoom) error
-	RunGame(ch chan *models.GameRoom, room *models.GameRoom) error
+	SetGame(room *models.GameRoom) error
+	TempRoom(signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom, room *models.GameRoom) error
+	RunGame(signal chan string, ch chan *models.GameRoom, room *models.GameRoom) error
 	TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error)
+	// UpdateRoom(room *models.GameRoom) error
+	SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom)
 }
 
 type MemoryRepository struct {
@@ -128,7 +130,7 @@ func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
 	return room, nil
 }
 
-func (s *MemoryRepository) StartGame(room *models.GameRoom) error {
+func (s *MemoryRepository) SetGame(room *models.GameRoom) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	room.Started = true
@@ -157,19 +159,29 @@ func (s *MemoryRepository) StartGame(room *models.GameRoom) error {
 	return nil
 }
 
-func (s *MemoryRepository) TempRoom(ch chan *models.GameRoom, room *models.GameRoom) error {
+func (s *MemoryRepository) TempRoom(signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom, room *models.GameRoom) error {
 	//userからの処理を一時的に保存
 	realRoom := s.memoryGameRoom[room.ID]
+	//一旦warning無視　プロトタイプ完成したら直す
 	tempRoom := *realRoom
-	ch <- &tempRoom
-	s.TestRoom(ch)
+	//ゲーム中はループ
+	go func() {
+		for {
+			tempRoom = *<-userch
+		}
+	}()
 	for {
-		//ゲーム中はループ
+		msg := <-signal
+		if msg == "update" {
+			ch <- &tempRoom
+		} else if msg == "end" {
+			break
+		}
 	}
 	return nil
 }
 
-func (s *MemoryRepository) RunGame(ch chan *models.GameRoom, room *models.GameRoom) error {
+func (s *MemoryRepository) RunGame(signal chan string, ch chan *models.GameRoom, room *models.GameRoom) error {
 	updateTicker := time.NewTicker(30 * time.Millisecond)
 	endTimer := time.After(time.Duration(room.TimeLeftSec) * time.Second)
 	defer updateTicker.Stop()
@@ -177,6 +189,7 @@ func (s *MemoryRepository) RunGame(ch chan *models.GameRoom, room *models.GameRo
 	for {
 		select {
 		case <-updateTicker.C:
+			signal <- "update"
 			// 30msごとの処理（ゲームロジックなど）
 			//ユーザーから送信された情報を基に、updateに一時的に構造体を作成し、30msごとに更新する
 			//異常、チートな移動、変更がないか また、ここで変更をlogとして保存しておく
@@ -186,8 +199,13 @@ func (s *MemoryRepository) RunGame(ch chan *models.GameRoom, room *models.GameRo
 				return err
 			}
 			//ここでアップデートする
-			s.UpdateRoom(room)
+			err = s.UpdateRoom(room)
+			if err != nil {
+				return err
+			}
+			s.SaveLogRoom(room)
 		case <-endTimer:
+			signal <- "end"
 			// 120秒経過でルームを終了
 			log.Println("ルームのタイムアウトにより終了します:", room.ID)
 			// room.End()
@@ -197,15 +215,34 @@ func (s *MemoryRepository) RunGame(ch chan *models.GameRoom, room *models.GameRo
 }
 
 func (s *MemoryRepository) TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	newRoom := <-ch
 	room := s.memoryGameRoom[newRoom.ID]
+	//ここでnewRoomとroomを比較し、異常がないか検知する。現時点でのチート対策はない
 	return room, nil
 }
 
 func (s *MemoryRepository) UpdateRoom(newRoom *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	room := s.memoryGameRoom[newRoom.ID]
 	*room = *newRoom
 	return nil
+}
+
+func (s *MemoryRepository) SaveLogRoom(room *models.GameRoom) error {
+	//プロトタイプ完成後に実装。
+	//データベースなどにjsonで予定
+	return nil
+}
+
+func (s *MemoryRepository) SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	(*room).Signal = signal
+	(*room).Ch = ch
+	(*room).UserCh = userch
 }
 
 // type SessionRepository interface {

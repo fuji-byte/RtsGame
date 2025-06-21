@@ -20,6 +20,7 @@ type IMemoryService interface {
 	JoinRoom(roomId string, user *models.User) error
 	StartGame(user *models.User) error
 	GetRoomInfo(roomId string) (*models.GameRoom, error)
+	UpdateRoom(roomId string, room *models.GameRoom) error
 }
 
 type MemoryService struct {
@@ -115,13 +116,17 @@ func (s *MemoryService) StartGame(user *models.User) error {
 		return errors.New("the room doesn't exist member")
 	}
 	//ルーム処理
-	err = s.memoryRepository.StartGame(room)
+	err = s.memoryRepository.SetGame(room)
 	if err != nil {
 		return err
 	}
 	ch := make(chan *models.GameRoom)
-	go s.memoryRepository.TempRoom(ch, room)
-	go s.memoryRepository.RunGame(ch, room)
+	userch := make(chan *models.GameRoom)
+	signal := make(chan string) //合図用のチャネル
+	s.memoryRepository.SetCh(room, signal, ch, userch)
+	// go s.memoryRepository.UpdateRoom(ch, &models.GameRoom{})
+	go s.memoryRepository.TempRoom(signal, ch, userch, room)
+	go s.memoryRepository.RunGame(signal, ch, room)
 	return nil
 }
 
@@ -131,6 +136,16 @@ func (s *MemoryService) GetRoomInfo(roomId string) (*models.GameRoom, error) {
 		return nil, err
 	}
 	return roomInfo, err
+}
+
+func (s *MemoryService) UpdateRoom(roomId string, room *models.GameRoom) error {
+	roomInfo, err := s.memoryRepository.GetRoom(roomId)
+	if err != nil {
+		return err
+	}
+	userch := (*roomInfo).UserCh
+	userch <- room
+	return nil
 }
 
 // func (s *MemoryService) RunGame(room *models.GameRoom) error {

@@ -1,6 +1,8 @@
 package models
 
-import "sync"
+import (
+	"sync"
+)
 
 // redisで保管予定
 // on memory
@@ -14,4 +16,7 @@ type GameRoom struct {
 	Started     bool //default false
 	Mutex       sync.Mutex
 	TimeLeftSec int
+	Signal      chan string
+	Ch          chan *GameRoom
+	UserCh      chan *GameRoom
 }

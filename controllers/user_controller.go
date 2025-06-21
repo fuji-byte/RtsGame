@@ -83,7 +83,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		var receivedMsg dto.MessageInput
 		//shouldbindingするのか
 		if err := json.Unmarshal(msg, &receivedMsg); err != nil {
-			fmt.Println("JSON のパースに失敗:", err)
+			fmt.Println("JSON のパースに失敗1:", err)
 			continue
 		}
 		switch receivedMsg.Type {
@@ -140,9 +140,17 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				continue
 			}
 			broadcast(*room, "gameStart", "game start")
+			//この辺でgo funcで継続的にbroadcastするか
 		case "reconnect":
 			continue
 		case "playing":
+			user, err := c.service.GetUserByClientId(clientId)
+			if err != nil {
+				fmt.Println("no users:", err)
+				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"`))
+				continue
+			}
+			err = c.service.UpdateRoom(user.RoomID, receivedMsg.GameRoom)
 			// c.service.GetRoomInfo()
 			continue
 		case "observe":
