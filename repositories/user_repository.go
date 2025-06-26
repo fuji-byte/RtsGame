@@ -28,6 +28,7 @@ type IMemoryRepository interface {
 	TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error)
 	// UpdateRoom(room *models.GameRoom) error
 	SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom)
+	CompareCellId(userId, roomId, cellId string) error
 }
 
 type MemoryRepository struct {
@@ -243,6 +244,18 @@ func (s *MemoryRepository) SetCh(room *models.GameRoom, signal chan string, ch c
 	(*room).Signal = signal
 	(*room).Ch = ch
 	(*room).UserCh = userch
+}
+
+// cellのプレイヤーIDとクライアントIDを比較
+func (s *MemoryRepository) CompareCellId(userId, roomId, cellId string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	room := s.memoryGameRoom[roomId]
+	cell := (*room).Cells[cellId]
+	if (*cell).PlayerID != userId {
+		return errors.New("you can't operate this cell")
+	}
+	return nil
 }
 
 // type SessionRepository interface {

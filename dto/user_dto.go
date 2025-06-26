@@ -1,6 +1,15 @@
 package dto
 
-import "main.go/models"
+import (
+	"encoding/json"
+
+	"main.go/models"
+)
+
+type TypeInput struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
 
 type MessageInput struct {
 	Type     string          `json:"type"`
@@ -19,10 +28,8 @@ type MessageOutput struct {
 	Error   error  `json:"err"`
 }
 
-// type GameRoomInput struct {
-// 	RoomName string `json:"roomName"` //interfaceでもよい.プレイヤーが指定するルーム番号
-// 	// Cells map[string]*models.Cell`json:"cells"`
-// 	X      float64 `json:"x"`
-// 	Y      float64 `json:"y"`
-// 	CellId string  `json:"cellid"`
-// }
+type GameRoomInput struct {
+	CellConnFrom string `json:"cellConnFrom"`
+	CellConnTo   string `json:"cellConnTo"`
+	CellId       string `json:"cellid"`
+}

@@ -20,7 +20,7 @@ type IMemoryService interface {
 	JoinRoom(roomId string, user *models.User) error
 	StartGame(user *models.User) error
 	GetRoomInfo(roomId string) (*models.GameRoom, error)
-	UpdateRoom(roomId string, room *models.GameRoom) error
+	UpdateRoom(userId, roomId, cellConnFrom, cellConnTo, cellId string) error
 }
 
 type MemoryService struct {
@@ -75,7 +75,16 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 	players := map[string]*models.User{
 		clientId: user,
 	}
-	newRoom := &models.GameRoom{ID: roomId, RoomName: "", Players: players, HostPlayer: user, Cells: make(map[string]*models.Cell), Started: false, TimeLeftSec: 120}
+	newRoom := &models.GameRoom{
+		ID:          roomId,
+		RoomName:    "",
+		Players:     players,
+		HostPlayer:  user,
+		Cells:       make(map[string]*models.Cell),
+		CellConn:    make(map[string][]string),
+		Started:     false,
+		TimeLeftSec: 120,
+	}
 	// user, err := s.GetUserByClientId(clientId)
 	_, err = s.memoryRepository.MakeRoom(newRoom, user)
 	if err != nil {
@@ -138,13 +147,39 @@ func (s *MemoryService) GetRoomInfo(roomId string) (*models.GameRoom, error) {
 	return roomInfo, err
 }
 
-func (s *MemoryService) UpdateRoom(roomId string, room *models.GameRoom) error {
-	roomInfo, err := s.memoryRepository.GetRoom(roomId)
+func (s *MemoryService) UpdateRoom(userId, roomId, cellConnFrom, cellConnTo, cellId string) error {
+	room, err := s.memoryRepository.GetRoom(roomId)
 	if err != nil {
 		return err
 	}
-	userch := (*roomInfo).UserCh
-	userch <- room
+	err = s.memoryRepository.CompareCellId(userId, roomId, cellId)
+	if err != nil {
+		return err
+	}
+	for _, v := range room.CellConn[cellConnFrom] {
+		if v == cellConnTo {
+			return errors.New("cell conn already exists")
+		}
+	}
+	copyCellConn := (*room).CellConn
+	copyCellConn[cellConnFrom] = append(copyCellConn[cellConnFrom], cellConnTo)
+
+	newRoom := models.GameRoom{
+		ID:          room.ID,
+		RoomName:    room.RoomName,
+		Players:     room.Players,
+		HostPlayer:  room.HostPlayer,
+		Cells:       room.Cells,
+		CellConn:    copyCellConn,
+		Started:     room.Started,
+		TimeLeftSec: room.TimeLeftSec,
+		Signal:      room.Signal,
+		Ch:          room.Ch,
+		UserCh:      room.UserCh,
+	}
+	//検証後にroomに保存する
+	userch := (*room).UserCh
+	userch <- &newRoom
 	return nil
 }
 
