@@ -12,7 +12,7 @@ import (
 )
 
 type IMemoryRepository interface {
-	CreateUser(user *models.User) error
+	CreateUser(user *models.User) (*models.User, error)
 	DeleteUser(clientId string) error
 	UserNum() int
 	GetAllUser() (*map[string]*models.User, error)
@@ -26,8 +26,9 @@ type IMemoryRepository interface {
 	TempRoom(signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom, room *models.GameRoom) error
 	RunGame(signal chan string, ch chan *models.GameRoom, room *models.GameRoom) error
 	TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error)
-	// UpdateRoom(room *models.GameRoom) error
+	UpdateRoom(room *models.GameRoom) error
 	SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom)
+	SaveLogRoom(room *models.GameRoom) error
 	CompareCellId(userId, roomId, cellId string) error
 }
 
@@ -42,19 +43,56 @@ func NewMemoryRepository(memoryUser map[string]*models.User, memoryCell map[stri
 	return &MemoryRepository{memoryUser: memoryUser, memoryCell: memoryCell, memoryGameRoom: memoryGameRoom}
 }
 
-func (s *MemoryRepository) CreateUser(user *models.User) error {
+func (s *MemoryRepository) CreateUser(user *models.User) (*models.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.memoryUser[(*user).ID] != nil {
-		return errors.New("user already exists")
+		return nil, errors.New("user already exists")
 	}
 	s.memoryUser[(*user).ID] = user
-	return nil
+	return user, nil
 }
 
 func (s *MemoryRepository) DeleteUser(clientId string) error {
+	user, err := s.GetUserByClientId(clientId)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var room *models.GameRoom = nil
+	if err != nil {
+		//ユーザーはルームに所属していなかった
+	} else {
+		room = s.memoryGameRoom[user.RoomID]
+	}
+	if user != nil && room != nil {
+		if user := room.Players[clientId]; user != nil {
+			var hostTF bool
+			if user.ID == room.HostPlayer.ID {
+				hostTF = true
+			} else {
+				hostTF = false
+			}
+			delete(room.Players, clientId)
+			go func(users *map[string]*models.User, roomId string, hostTF bool) {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				//ここで、ホストの変更もしくはルームの削除を行う
+				if len(*users) == 0 {
+					delete(s.memoryGameRoom, user.RoomID)
+				} else if hostTF {
+					//host譲渡をここに書く また、hostが変更されたら、hostになった人に通知
+					//gameroomないのhostを変更
+					var firstUser *models.User
+					for _, v := range *users {
+						firstUser = v
+						break // 最初の要素でループを抜ける
+					}
+					s.memoryGameRoom[roomId].HostPlayer.ID = firstUser.ID
+					firstUser.Send([]byte(`{"type":"host"}`))
+					firstUser.Send([]byte(`{"type":"message","message":"このルームのホストになりました。"}`))
+				}
+			}(&room.Players, user.RoomID, hostTF)
+		}
+	}
 	if user := s.memoryUser[clientId]; user == nil {
 		return errors.New("user already deleted")
 	}
@@ -175,7 +213,9 @@ func (s *MemoryRepository) TempRoom(signal chan string, ch chan *models.GameRoom
 		msg := <-signal
 		if msg == "update" {
 			ch <- &tempRoom
+
 		} else if msg == "end" {
+			//roomIdを"-1にしたり終了処理行う"
 			break
 		}
 	}
@@ -227,6 +267,9 @@ func (s *MemoryRepository) TestRoom(ch chan *models.GameRoom) (*models.GameRoom,
 func (s *MemoryRepository) UpdateRoom(newRoom *models.GameRoom) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.memoryGameRoom[newRoom.ID] == nil {
+		return errors.New("nil pointer in UpdateRoom")
+	}
 	room := s.memoryGameRoom[newRoom.ID]
 	*room = *newRoom
 	return nil

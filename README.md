@@ -17,9 +17,9 @@ redis-cli
 keys \*
 get session:クライアント id
 
-
 作成予定機能
-guestでもトークンを生成してユーザー認証を行う
+guest でもトークンを生成してユーザー認証を行う
 フレンド機能
-sync当たりの最適化も
-gameroomをキーで管理するか
+sync 当たりの最適化も
+gameroom をキーで管理するか
+host が抜けたときの処理書いてある？

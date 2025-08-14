@@ -10,7 +10,7 @@ import (
 )
 
 type IMemoryService interface {
-	CreateUser(clientId string, conn *websocket.Conn) error
+	CreateUser(clientId string, conn *websocket.Conn) (*models.User, error)
 	DeleteUser(clientId string) error
 	UserNum() int
 	GetAllUser() (*map[string]*models.User, error)
@@ -31,9 +31,9 @@ func NewMemoryService(memoryRepository repositories.IMemoryRepository) IMemorySe
 	return &MemoryService{memoryRepository: memoryRepository}
 }
 
-func (s *MemoryService) CreateUser(clientId string, conn *websocket.Conn) error {
-	newUser := models.User{ID: clientId, Name: "guest", Color: "blue", IsOnline: true, Conn: conn, RoomID: "-1"}
-	return s.memoryRepository.CreateUser(&newUser)
+func (s *MemoryService) CreateUser(clientId string, conn *websocket.Conn) (*models.User, error) {
+	newUser := &models.User{ID: clientId, Name: "guest", Color: "blue", IsOnline: true, Conn: conn, SendCh: make(chan []byte, 256), RoomID: "-1"}
+	return s.memoryRepository.CreateUser(newUser)
 }
 
 func (s *MemoryService) DeleteUser(clientId string) error {

@@ -51,7 +51,8 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 
 	// 新しいクライアントを登録
 	clientId := uuid.New().String()
-	err = c.service.CreateUser(clientId, conn)
+	user, err := c.service.CreateUser(clientId, conn)
+	go user.StartWriter()
 	if err != nil {
 		log.Fatal("CreateUser Error")
 	}
@@ -63,17 +64,30 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		//user情報削除、または一定時間保持
 		//room情報 models.gameroomの情報変更,models.user[clientId]の削除
 		//データベース使うならuser.IsOnline falseにする
-		err := c.service.DeleteUser(clientId)
+
+		// user, err := c.service.GetUserByClientId(clientId)
+		// if err != nil {
+		// 	fmt.Println("user取得エラー")
+		// }
+		users, err := c.service.GetUsersByRoomId(user.RoomID)
+		if err != nil {
+			//roomが存在していない
+		}
+		err = c.service.DeleteUser(clientId)
 		if err != nil {
 			log.Fatal("DeleteUser Error")
 		}
 		c.userNumControll()
+		if users != nil {
+			broadcast(*users, "roomNumDecreased", "roomNum", len(*users))
+			fmt.Println(users)
+		}
 		fmt.Println("切断後処理完了:", clientId)
 	}()
 
 	//接続状態時の処理
 	for {
-		_, msg, err := conn.ReadMessage()
+		_, msg, err := user.Conn.ReadMessage()
 		if err != nil {
 			fmt.Println("接続が切断されました:", err)
 			return
@@ -99,55 +113,58 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				roomId, err := c.service.MakeRoom(clientId)
 				if err != nil {
 					fmt.Println("MakeRoom Error:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームを作成できませんでした。","error": "make a room Error"`))
+					msg := []byte(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "make a room Error"}`)
+					user.Send(msg)
 					continue
 				}
-				message := fmt.Sprintf(`"type":"roomId","roomId":"%v"`, roomId)
-				conn.WriteMessage(websocket.TextMessage, []byte(message))
+				user.Send([]byte(fmt.Sprintf(`{"type":"roomId","roomId":"%v"}`, roomId)))
+				user.Send([]byte(`{"type":"host"}`))
 			case "joinRoom":
-				//usersだが、ここではclient単体
+				// needed roomId
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームを作成できませんでした。","error": "get a user Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "get a user Error"}`))
 					continue
 				}
 				err = c.service.JoinRoom(receivedMsg.RoomID, user)
 				if err != nil {
 					fmt.Println("join room Error:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームに参加できませんでした。","error": "join in the noom Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ルームに参加できませんでした。","error": "join in the room Error"}`))
 					continue
 				}
 				room, err := c.service.GetUsersByRoomId(receivedMsg.RoomID)
 				if err != nil {
 					fmt.Println("no users:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`))
 					continue
 				}
 				message := fmt.Sprintf(`%vが参加しました`, user.Name)
-				broadcast(*room, "roomNum", len(*room))
-				broadcast(*room, "message", message)
+				broadcast(*room, "roomNum", "roomNum", len(*room))
+				broadcast(*room, "message", "message", message)
+				broadcast(*room, "roomId", "roomId", user.RoomID)
 			case "match":
+				//needed nothing
 				//host playerがmatchを送信したら
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`))
 					continue
 				}
 				//playerが切断したとき、ホストだったらランダムに変更
 				err = c.service.StartGame(user)
 				if err != nil {
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"あなたはこのルームのホストではありません","error": "invalid host Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ゲームのスタートに失敗しました","error": "failed to start the game or invalid host Error"}`))
 					continue
 				}
 				room, err := c.service.GetUsersByRoomId(user.RoomID)
 				if err != nil {
 					fmt.Println("no users:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`))
 					continue
 				}
-				broadcast(*room, "gameStart", "game start")
+				broadcast(*room, "gameStart", "gameStart", "game start")
 				//この辺でgo funcで継続的にbroadcastするか
 			case "reconnect":
 				continue
@@ -169,7 +186,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				//終わるまでか、観戦キャンセルされるまでずっとブロードキャスト
 				continue
 			default:
-				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"タイプが適切ではありません","error": "type Error"`))
+				user.Send([]byte(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`))
 				continue
 			}
 
@@ -184,18 +201,18 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`))
 					continue
 				}
 				//cellの線を切るときとつなぐときの二つ作る。オプションで指定してもらう
 				err = c.service.UpdateRoom(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo, receivedMsg.CellId) // c.service.GetRoomInfo()
 				if err != nil {
-					conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"`))
+					user.Send([]byte(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`))
 					continue
 				}
 				continue
 			default:
-				conn.WriteMessage(websocket.TextMessage, []byte(`"message":"タイプが適切ではありません","error": "type Error"`))
+				user.Send([]byte(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`))
 				continue
 			}
 		default:
@@ -212,23 +229,28 @@ func (c *MemoryController) userNumControll() int {
 		fmt.Println("no users", err)
 		return -1
 	}
-	broadcast(*users, "userNum", len(*users))
+	broadcast(*users, "userNum", "userNum", len(*users))
 	return len(*users)
 }
 
 // broadcast wants users map[string]*models.User, messageType string, content(int float32 string)
 func broadcast[T int | float32 | string](
 	users map[string]*models.User,
-	messageType string,
+	messageType1 string,
+	messageType2 string,
 	content T,
 ) {
-	message := fmt.Sprintf(`{"type":"%v", "%v": "%v"}`, messageType, messageType, content)
-
+	message := fmt.Sprintf(`{"type":"%v", "%v": "%v"}`, messageType1, messageType2, content)
+	// jsonBytes, err := json.Marshal(message)
+	// if err != nil {
+	// 	fmt.Println("Marshalエラー:", err)
+	// 	return
+	// }
 	for _, user := range users {
-		err := user.Conn.WriteMessage(websocket.TextMessage, []byte(message))
-		if err != nil {
-			fmt.Printf("send Message Error to user %s: %v\n", user.ID, err)
+		if user == nil {
+			fmt.Printf("send Message Error to user\n")
 		}
+		user.Send([]byte(message))
 	}
 }
 
