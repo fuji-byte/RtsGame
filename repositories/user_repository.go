@@ -1,13 +1,16 @@
 package repositories
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"main.go/dto"
 	"main.go/models"
 )
 
@@ -87,8 +90,8 @@ func (s *MemoryRepository) DeleteUser(clientId string) error {
 						break // 最初の要素でループを抜ける
 					}
 					s.memoryGameRoom[roomId].HostPlayer.ID = firstUser.ID
-					firstUser.Send([]byte(`{"type":"host"}`))
-					firstUser.Send([]byte(`{"type":"message","message":"このルームのホストになりました。"}`))
+					firstUser.Send(`{"type":"host"}`)
+					firstUser.Send(`{"type":"message","message":"このルームのホストになりました。"}`)
 				}
 			}(&room.Players, user.RoomID, hostTF)
 		}
@@ -213,7 +216,6 @@ func (s *MemoryRepository) TempRoom(signal chan string, ch chan *models.GameRoom
 		msg := <-signal
 		if msg == "update" {
 			ch <- &tempRoom
-
 		} else if msg == "end" {
 			//roomIdを"-1にしたり終了処理行う"
 			break
@@ -235,6 +237,7 @@ func (s *MemoryRepository) RunGame(signal chan string, ch chan *models.GameRoom,
 			//ユーザーから送信された情報を基に、updateに一時的に構造体を作成し、30msごとに更新する
 			//異常、チートな移動、変更がないか また、ここで変更をlogとして保存しておく
 			//ほかの関数に一時的に保存し、この関数から信号を送信したらtestroomに保存したものを送信し、test検証後にアップデートする
+			//ルームのプレイヤーが０になったらsavelog以外消す？再接続可能にするか
 			room, err := s.TestRoom(ch)
 			if err != nil {
 				return err
@@ -244,6 +247,7 @@ func (s *MemoryRepository) RunGame(signal chan string, ch chan *models.GameRoom,
 			if err != nil {
 				return err
 			}
+			s.Broadcast(room)
 			s.SaveLogRoom(room)
 		case <-endTimer:
 			signal <- "end"
@@ -276,8 +280,28 @@ func (s *MemoryRepository) UpdateRoom(newRoom *models.GameRoom) error {
 }
 
 func (s *MemoryRepository) SaveLogRoom(room *models.GameRoom) error {
+
 	//プロトタイプ完成後に実装。
 	//データベースなどにjsonで予定
+	return nil
+}
+
+func (s *MemoryRepository) Broadcast(room *models.GameRoom) error {
+	sendMessage := &dto.GameRoomOutput{
+		Cells:       room.Cells,
+		CellConn:    room.CellConn,
+		TimeLeftSec: room.TimeLeftSec,
+	}
+	jsonData, err := json.Marshal(*sendMessage)
+	if err != nil {
+		fmt.Println(err)
+	}
+	for _, v := range room.Players {
+		v.Send(string(jsonData))
+	}
+	for _, v := range room.Observers {
+		v.Send(string(jsonData))
+	}
 	return nil
 }
 

@@ -37,9 +37,9 @@ func (u *User) StartWriter() {
 }
 
 // Send は SendCh にメッセージを送る
-func (u *User) Send(msg []byte) {
+func (u *User) Send(msg string) {
 	select {
-	case u.SendCh <- msg:
+	case u.SendCh <- []byte(msg):
 	default:
 		fmt.Println("SendCh is full, dropping message")
 	}

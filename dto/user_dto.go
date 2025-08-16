@@ -33,3 +33,9 @@ type GameRoomInput struct {
 	CellConnTo   string `json:"cellConnTo"`
 	CellId       string `json:"cellid"`
 }
+
+type GameRoomOutput struct {
+	Cells       map[string]*models.Cell
+	CellConn    map[string][]string
+	TimeLeftSec int
+}

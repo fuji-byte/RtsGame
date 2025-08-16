@@ -75,10 +75,12 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 	players := map[string]*models.User{
 		clientId: user,
 	}
+	var observers map[string]*models.User
 	newRoom := &models.GameRoom{
 		ID:          roomId,
 		RoomName:    "",
 		Players:     players,
+		Observers:   observers,
 		HostPlayer:  user,
 		Cells:       make(map[string]*models.Cell),
 		CellConn:    make(map[string][]string),

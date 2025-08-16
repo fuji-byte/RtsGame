@@ -7,6 +7,7 @@ type GameRoom struct {
 	// Key string
 	RoomName    string //interfaceでもよい.プレイヤーが指定するルーム番号
 	Players     map[string]*User
+	Observers   map[string]*User
 	HostPlayer  *User
 	Cells       map[string]*Cell
 	CellConn    map[string][]string //cell connectionを保存する。

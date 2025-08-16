@@ -113,30 +113,30 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				roomId, err := c.service.MakeRoom(clientId)
 				if err != nil {
 					fmt.Println("MakeRoom Error:", err)
-					msg := []byte(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "make a room Error"}`)
+					msg := `{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "make a room Error"}`
 					user.Send(msg)
 					continue
 				}
-				user.Send([]byte(fmt.Sprintf(`{"type":"roomId","roomId":"%v"}`, roomId)))
-				user.Send([]byte(`{"type":"host"}`))
+				user.Send(fmt.Sprintf(`{"type":"roomId","roomId":"%v"}`, roomId))
+				user.Send(`{"type":"host"}`)
 			case "joinRoom":
 				// needed roomId
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					user.Send([]byte(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "get a user Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "get a user Error"}`)
 					continue
 				}
 				err = c.service.JoinRoom(receivedMsg.RoomID, user)
 				if err != nil {
 					fmt.Println("join room Error:", err)
-					user.Send([]byte(`{"type":"errorMessage","message":"ルームに参加できませんでした。","error": "join in the room Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ルームに参加できませんでした。","error": "join in the room Error"}`)
 					continue
 				}
 				room, err := c.service.GetUsersByRoomId(receivedMsg.RoomID)
 				if err != nil {
 					fmt.Println("no users:", err)
-					user.Send([]byte(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`)
 					continue
 				}
 				message := fmt.Sprintf(`%vが参加しました`, user.Name)
@@ -144,24 +144,22 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				broadcast(*room, "message", "message", message)
 				broadcast(*room, "roomId", "roomId", user.RoomID)
 			case "match":
-				//needed nothing
 				//host playerがmatchを送信したら
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					user.Send([]byte(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`)
 					continue
 				}
-				//playerが切断したとき、ホストだったらランダムに変更
 				err = c.service.StartGame(user)
 				if err != nil {
-					user.Send([]byte(`{"type":"errorMessage","message":"ゲームのスタートに失敗しました","error": "failed to start the game or invalid host Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ゲームのスタートに失敗しました","error": "failed to start the game or invalid host Error"}`)
 					continue
 				}
 				room, err := c.service.GetUsersByRoomId(user.RoomID)
 				if err != nil {
 					fmt.Println("no users:", err)
-					user.Send([]byte(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`)
 					continue
 				}
 				broadcast(*room, "gameStart", "gameStart", "game start")
@@ -182,11 +180,10 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			// 	}
 			// 	continue
 			case "observe":
-				// c.service.GetRoomInfo()
 				//終わるまでか、観戦キャンセルされるまでずっとブロードキャスト
 				continue
 			default:
-				user.Send([]byte(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`))
+				user.Send(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`)
 				continue
 			}
 
@@ -201,18 +198,18 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					user.Send([]byte(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`)
 					continue
 				}
 				//cellの線を切るときとつなぐときの二つ作る。オプションで指定してもらう
 				err = c.service.UpdateRoom(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo, receivedMsg.CellId) // c.service.GetRoomInfo()
 				if err != nil {
-					user.Send([]byte(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`))
+					user.Send(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`)
 					continue
 				}
 				continue
 			default:
-				user.Send([]byte(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`))
+				user.Send(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`)
 				continue
 			}
 		default:
@@ -250,7 +247,7 @@ func broadcast[T int | float32 | string](
 		if user == nil {
 			fmt.Printf("send Message Error to user\n")
 		}
-		user.Send([]byte(message))
+		user.Send(message)
 	}
 }
 
