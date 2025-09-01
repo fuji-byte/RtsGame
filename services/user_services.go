@@ -17,10 +17,10 @@ type IMemoryService interface {
 	GetUserByClientId(clientId string) (*models.User, error)
 	MakeRoom(clientId string) (string, error)
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
-	JoinRoom(roomId string, user *models.User) error
+	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
 	StartGame(user *models.User) error
 	GetRoomInfo(roomId string) (*models.GameRoom, error)
-	UpdateRoom(userId, roomId, cellConnFrom, cellConnTo, cellId string) error
+	UpdateRoom(userId, roomId, cellConnFrom, cellConnTo string) error
 }
 
 type MemoryService struct {
@@ -99,18 +99,18 @@ func (s *MemoryService) GetUsersByRoomId(Id string) (*map[string]*models.User, e
 	return s.memoryRepository.GetUsersByRoomId(Id)
 }
 
-func (s *MemoryService) JoinRoom(roomId string, user *models.User) error {
+func (s *MemoryService) JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error) {
 	if (*user).RoomID != "-1" {
-		return errors.New("user already in a Room")
+		return nil, errors.New("user already in a Room")
 	}
 	// room, err := s.memoryRepository.GetRoom(roomId)
-	_, err := s.memoryRepository.JoinRoom(roomId, user)
+	tempRoom, err := s.memoryRepository.JoinRoom(roomId, user)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// room.Players[user.ID] = user
 	// (*user).RoomID = roomId
-	return nil
+	return tempRoom, nil
 }
 
 func (s *MemoryService) StartGame(user *models.User) error {
@@ -134,7 +134,10 @@ func (s *MemoryService) StartGame(user *models.User) error {
 	ch := make(chan *models.GameRoom)
 	userch := make(chan *models.GameRoom)
 	signal := make(chan string) //合図用のチャネル
-	s.memoryRepository.SetCh(room, signal, ch, userch)
+	err = s.memoryRepository.SetCh(room, signal, ch, userch)
+	if err != nil {
+		return err
+	}
 	// go s.memoryRepository.UpdateRoom(ch, &models.GameRoom{})
 	go s.memoryRepository.TempRoom(signal, ch, userch, room)
 	go s.memoryRepository.RunGame(signal, ch, room)
@@ -149,39 +152,23 @@ func (s *MemoryService) GetRoomInfo(roomId string) (*models.GameRoom, error) {
 	return roomInfo, err
 }
 
-func (s *MemoryService) UpdateRoom(userId, roomId, cellConnFrom, cellConnTo, cellId string) error {
+func (s *MemoryService) UpdateRoom(userId, roomId, cellConnFrom, cellConnTo string) error {
 	room, err := s.memoryRepository.GetRoom(roomId)
 	if err != nil {
 		return err
 	}
-	err = s.memoryRepository.CompareCellId(userId, roomId, cellId)
+	err = s.memoryRepository.CheckCells(cellConnFrom, cellConnTo, room)
 	if err != nil {
 		return err
 	}
-	for _, v := range room.CellConn[cellConnFrom] {
-		if v == cellConnTo {
-			return errors.New("cell conn already exists")
-		}
+	err = s.memoryRepository.CompareCellId(userId, cellConnFrom, room)
+	if err != nil {
+		return err
 	}
-	copyCellConn := (*room).CellConn
-	copyCellConn[cellConnFrom] = append(copyCellConn[cellConnFrom], cellConnTo)
-
-	newRoom := models.GameRoom{
-		ID:          room.ID,
-		RoomName:    room.RoomName,
-		Players:     room.Players,
-		HostPlayer:  room.HostPlayer,
-		Cells:       room.Cells,
-		CellConn:    copyCellConn,
-		Started:     room.Started,
-		TimeLeftSec: room.TimeLeftSec,
-		Signal:      room.Signal,
-		Ch:          room.Ch,
-		UserCh:      room.UserCh,
+	err = s.memoryRepository.AddCell(cellConnFrom, cellConnTo, room)
+	if err != nil {
+		return err
 	}
-	//検証後にroomに保存する
-	userch := (*room).UserCh
-	userch <- &newRoom
 	return nil
 }
 

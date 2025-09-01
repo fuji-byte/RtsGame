@@ -12,7 +12,7 @@ type GameRoom struct {
 	Cells       map[string]*Cell
 	CellConn    map[string][]string //cell connectionを保存する。
 	Started     bool                //default false
-	TimeLeftSec int
+	TimeLeftSec float32
 	Signal      chan string
 	Ch          chan *GameRoom
 	UserCh      chan *GameRoom

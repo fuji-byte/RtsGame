@@ -79,7 +79,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		}
 		c.userNumControll()
 		if users != nil {
-			broadcast(*users, "roomNumDecreased", "roomNum", len(*users))
+			broadcast(*users, "roomNum", "message", len(*users))
 			fmt.Println(users)
 		}
 		fmt.Println("切断後処理完了:", clientId)
@@ -117,7 +117,8 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 					user.Send(msg)
 					continue
 				}
-				user.Send(fmt.Sprintf(`{"type":"roomId","roomId":"%v"}`, roomId))
+				user.Send(fmt.Sprintf(`{"type":"roomId","message":"%v"}`, roomId))
+				user.Send(`{"type":"roomNum", "message":"1"}`)
 				user.Send(`{"type":"host"}`)
 			case "joinRoom":
 				// needed roomId
@@ -127,7 +128,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 					user.Send(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "get a user Error"}`)
 					continue
 				}
-				err = c.service.JoinRoom(receivedMsg.RoomID, user)
+				tempUsers, err := c.service.JoinRoom(receivedMsg.RoomID, user)
 				if err != nil {
 					fmt.Println("join room Error:", err)
 					user.Send(`{"type":"errorMessage","message":"ルームに参加できませんでした。","error": "join in the room Error"}`)
@@ -139,10 +140,10 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 					user.Send(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`)
 					continue
 				}
-				message := fmt.Sprintf(`%vが参加しました`, user.Name)
-				broadcast(*room, "roomNum", "roomNum", len(*room))
-				broadcast(*room, "message", "message", message)
-				broadcast(*room, "roomId", "roomId", user.RoomID)
+				msg := fmt.Sprintf(`%vが参加しました`, user.Name)
+				broadcast(*room, "roomNum", "message", len(*room))
+				broadcast(*tempUsers, "message", "message", msg)
+				user.Send(fmt.Sprintf(`{"type":"roomId","message":"%v"}`, user.RoomID))
 			case "match":
 				//host playerがmatchを送信したら
 				user, err := c.service.GetUserByClientId(clientId)
@@ -164,22 +165,8 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				}
 				broadcast(*room, "gameStart", "gameStart", "game start")
 				//この辺でgo funcで継続的にbroadcastするか
-			case "reconnect":
-				continue
-			// case "playing":
-			// 	user, err := c.service.GetUserByClientId(clientId)
-			// 	if err != nil {
-			// 		fmt.Println("no users:", err)
-			// 		conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"`))
-			// 		continue
-			// 	}
-			// 	err = c.service.UpdateRoom(user.RoomID, &receivedMsg.GameRoom) // c.service.GetRoomInfo()
-			// 	if err != nil {
-			// 		conn.WriteMessage(websocket.TextMessage, []byte(`"message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"`))
-			// 		continue
-			// 	}
-			// 	continue
 			case "observe":
+				//roomのobserverに追加
 				//終わるまでか、観戦キャンセルされるまでずっとブロードキャスト
 				continue
 			default:
@@ -187,7 +174,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				continue
 			}
 
-		case "game_room":
+		case "game":
 			var receivedMsg dto.GameRoomInput
 			if err := json.Unmarshal(raw.Data, &receivedMsg); err != nil {
 				fmt.Println("GameRoomInput の解析に失敗:", err)
@@ -226,7 +213,7 @@ func (c *MemoryController) userNumControll() int {
 		fmt.Println("no users", err)
 		return -1
 	}
-	broadcast(*users, "userNum", "userNum", len(*users))
+	broadcast(*users, "userNum", "message", len(*users))
 	return len(*users)
 }
 

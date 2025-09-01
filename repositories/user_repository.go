@@ -23,18 +23,21 @@ type IMemoryRepository interface {
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	MakeRoom(room *models.GameRoom, user *models.User) (*models.GameRoom, error)
 	GetRoom(roomId string) (*models.GameRoom, error)
-	JoinRoom(roomId string, user *models.User) (*models.GameRoom, error)
+	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
 	// SetRoomId(user *models.User, roomId string) error
 	SetGame(room *models.GameRoom) error
 	TempRoom(signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom, room *models.GameRoom) error
 	RunGame(signal chan string, ch chan *models.GameRoom, room *models.GameRoom) error
 	TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error)
 	UpdateRoom(room *models.GameRoom) error
-	SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom)
+	SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom) error
 	SaveLogRoom(room *models.GameRoom) error
-	CompareCellId(userId, roomId, cellId string) error
+	CheckCells(cellConnFrom, cellConnTo string, room *models.GameRoom) error
+	CompareCellId(clientId, cellId string, room *models.GameRoom) error
+	AddCell(cellConnFrom, cellConnTo string, room *models.GameRoom) error
 }
 
+// 現状、すべての変数にmuがつくため、効率が良くない
 type MemoryRepository struct {
 	memoryUser     map[string]*models.User     // ユーザーID → ユーザー
 	memoryCell     map[string]*models.Cell     // セルID → セル
@@ -150,16 +153,25 @@ func (s *MemoryRepository) MakeRoom(room *models.GameRoom, user *models.User) (*
 	return room, nil
 }
 
-func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*models.GameRoom, error) {
+func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	room := s.memoryGameRoom[roomId]
 	if room == nil {
 		return nil, errors.New("room not found")
 	}
+	tempUsers := make(map[string]*models.User)
+
+	for k, v := range room.Players {
+		tempUsers[k] = v
+	}
+
+	for k, v := range room.Observers {
+		tempUsers[k] = v
+	}
 	(*room).Players[user.ID] = user
 	(*user).RoomID = roomId
-	return room, nil
+	return &tempUsers, nil
 }
 
 func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
@@ -167,7 +179,7 @@ func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
 	defer s.mu.Unlock()
 	room := s.memoryGameRoom[roomId]
 	if room == nil {
-		return nil, errors.New("room not found")
+		return nil, errors.New("empty room")
 	}
 	return room, nil
 }
@@ -275,7 +287,11 @@ func (s *MemoryRepository) UpdateRoom(newRoom *models.GameRoom) error {
 		return errors.New("nil pointer in UpdateRoom")
 	}
 	room := s.memoryGameRoom[newRoom.ID]
+	if room == nil {
+		return errors.New("nil pointer in UpdateRoom")
+	}
 	*room = *newRoom
+	room.TimeLeftSec -= 0.03
 	return nil
 }
 
@@ -296,32 +312,80 @@ func (s *MemoryRepository) Broadcast(room *models.GameRoom) error {
 	if err != nil {
 		fmt.Println(err)
 	}
+	msg := fmt.Sprintf(`{"type":"gameUpdate","message":%s}`, string(jsonData))
 	for _, v := range room.Players {
-		v.Send(string(jsonData))
+		v.Send(msg)
 	}
 	for _, v := range room.Observers {
-		v.Send(string(jsonData))
+		v.Send(msg)
 	}
 	return nil
 }
 
-func (s *MemoryRepository) SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom) {
+func (s *MemoryRepository) SetCh(room *models.GameRoom, signal chan string, ch chan *models.GameRoom, userch chan *models.GameRoom) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if room == nil {
+		return errors.New("empty room")
+	}
 	(*room).Signal = signal
 	(*room).Ch = ch
 	(*room).UserCh = userch
+	return nil
+}
+
+// roomにcellConnFrom, cellConnToが存在しているか調べる
+func (s *MemoryRepository) CheckCells(cellConnFrom, cellConnTo string, room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if room == nil {
+		return errors.New("empty room")
+	}
+	if room.Cells[cellConnFrom] == nil || room.Cells[cellConnTo] == nil {
+		return errors.New("invalid cellId")
+	}
+	return nil
 }
 
 // cellのプレイヤーIDとクライアントIDを比較
-func (s *MemoryRepository) CompareCellId(userId, roomId, cellId string) error {
+func (s *MemoryRepository) CompareCellId(clientId, cellId string, room *models.GameRoom) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	room := s.memoryGameRoom[roomId]
+	if room == nil {
+		return errors.New("empty room")
+	}
 	cell := (*room).Cells[cellId]
-	if (*cell).PlayerID != userId {
+	if (*cell).PlayerID != clientId {
 		return errors.New("you can't operate this cell")
 	}
+	return nil
+}
+
+func (s *MemoryRepository) AddCell(cellConnFrom, cellConnTo string, room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if room == nil {
+		return errors.New("empty room")
+	}
+	//ここは参照しているだけなので安全
+	for _, v := range room.CellConn[cellConnFrom] {
+		if v == cellConnTo {
+			return errors.New("cell conn already exists")
+		}
+	}
+	newRoom := *room
+	// CellConn のディープコピー
+	newCellConn := make(map[string][]string, len(room.CellConn))
+	for key, slice := range room.CellConn {
+		newCellConn[key] = append([]string(nil), slice...)
+	}
+	// 新しい接続を追加
+	newCellConn[cellConnFrom] = append(newCellConn[cellConnFrom], cellConnTo)
+	newRoom.CellConn = newCellConn
+
+	//検証後にroomに保存する
+	userch := (*room).UserCh
+	userch <- &newRoom
 	return nil
 }
 

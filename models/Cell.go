@@ -4,6 +4,7 @@ package models
 type Cell struct {
 	ID       string
 	PlayerID string
+	CellType string
 	Rank     int
 	Hp       int
 	X        float64
