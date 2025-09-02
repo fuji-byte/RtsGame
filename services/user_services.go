@@ -186,7 +186,7 @@ func (s *MemoryService) DelCellConn(userId, roomId, cellConnFrom, cellConnTo str
 	if err != nil {
 		return err
 	}
-	err = s.memoryRepository.DelCell(cellConnFrom, cellConnTo, room)
+	err = s.memoryRepository.DelCellConn(cellConnFrom, cellConnTo, room)
 	if err != nil {
 		return err
 	}

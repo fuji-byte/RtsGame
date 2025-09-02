@@ -185,32 +185,53 @@ func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
 	return room, nil
 }
 
-func (s *MemoryRepository) SetGame(room *models.GameRoom) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	room.Started = true
-	//cellの初期化と、go funcでの試合開始、log保存開始
-	// rand.Seed(time.Now().UnixNano())
+// ※呼び出し元関数でロック必須
+func (s *MemoryRepository) makeCell(clientId string, room *models.GameRoom) (*models.Cell, error) {
+
+	//画面サイズ定義
 	screenWidth := 360.0
 	screenHeight := 640.0
 	margin := 20.0
-	for _, client := range room.Players {
-		x := rand.Float64()*(screenWidth-2*margin) + margin
-		y := rand.Float64()*(screenHeight-2*margin) + margin
-		id := uuid.New().String()
-		cell := models.Cell{
-			ID:       id,
-			PlayerID: client.ID,
-			Hp:       10,
-			X:        x,
-			Y:        y,
-			Rank:     1,
-			Power:    1,
-		}
-		room.Cells[id] = &cell
+
+	cell := models.Cell{
+		ID:       uuid.New().String(),
+		PlayerID: clientId,
+		Hp:       10,
+		X:        rand.Float64()*(screenWidth-2*margin) + margin,
+		Y:        rand.Float64()*(screenHeight-2*margin) + margin,
+		Rank:     1,
+		Power:    1,
 	}
-	// room.Cells
-	// go func
+
+	room.Cells[cell.ID] = &cell
+
+	return &cell, nil
+}
+
+// ゲーム開始前の試合管理
+func (s *MemoryRepository) SetGame(room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if room == nil {
+		return errors.New("empty room")
+	}
+
+	//各プレイヤーのcell生産
+	for key := range room.Players {
+		_, err := s.makeCell(key, room)
+		if err != nil {
+			return err
+		}
+	}
+	i := 0
+	for i < rand.Intn(3)+1 {
+		s.makeCell("", room)
+		i++
+	}
+
+	room.Started = true
+
 	return nil
 }
 
