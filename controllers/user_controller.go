@@ -181,15 +181,27 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				continue
 			}
 			switch raw.Type {
-			case "playing":
+			case "cellConn":
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
 					user.Send(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`)
 					continue
 				}
-				//cellの線を切るときとつなぐときの二つ作る。オプションで指定してもらう
-				err = c.service.UpdateRoom(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo, receivedMsg.CellId) // c.service.GetRoomInfo()
+				err = c.service.CellConn(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo)
+				if err != nil {
+					user.Send(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`)
+					continue
+				}
+				continue
+			case "delCellConn":
+				user, err := c.service.GetUserByClientId(clientId)
+				if err != nil {
+					fmt.Println("no users:", err)
+					user.Send(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`)
+					continue
+				}
+				err = c.service.DelCellConn(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo)
 				if err != nil {
 					user.Send(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`)
 					continue

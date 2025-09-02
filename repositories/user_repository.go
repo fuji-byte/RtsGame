@@ -35,6 +35,7 @@ type IMemoryRepository interface {
 	CheckCells(cellConnFrom, cellConnTo string, room *models.GameRoom) error
 	CompareCellId(clientId, cellId string, room *models.GameRoom) error
 	AddCell(cellConnFrom, cellConnTo string, room *models.GameRoom) error
+	DelCellConn(cellConnFrom, cellConnTo string, room *models.GameRoom) error
 }
 
 // 現状、すべての変数にmuがつくため、効率が良くない
@@ -364,11 +365,17 @@ func (s *MemoryRepository) CompareCellId(clientId, cellId string, room *models.G
 func (s *MemoryRepository) AddCell(cellConnFrom, cellConnTo string, room *models.GameRoom) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if room == nil {
 		return errors.New("empty room")
 	}
+
+	slice, ok := room.CellConn[cellConnFrom]
+	if !ok {
+		return errors.New("no such key exists")
+	}
 	//ここは参照しているだけなので安全
-	for _, v := range room.CellConn[cellConnFrom] {
+	for _, v := range slice {
 		if v == cellConnTo {
 			return errors.New("cell conn already exists")
 		}
@@ -384,9 +391,54 @@ func (s *MemoryRepository) AddCell(cellConnFrom, cellConnTo string, room *models
 	newRoom.CellConn = newCellConn
 
 	//検証後にroomに保存する
-	userch := (*room).UserCh
-	userch <- &newRoom
-	return nil
+	select {
+	case room.UserCh <- &newRoom:
+		return nil
+	default:
+		return errors.New("user channel is blocked")
+	}
+}
+
+func (s *MemoryRepository) DelCellConn(cellConnFrom, cellConnTo string, room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if room == nil {
+		return errors.New("empty room")
+	}
+	slice, ok := room.CellConn[cellConnFrom]
+	if !ok {
+		return errors.New("no such key exists")
+	}
+
+	cellConnContent := make([]string, 0, len(slice))
+	found := false
+	for _, v := range slice {
+		if v == cellConnTo {
+			found = true
+			continue
+		}
+		cellConnContent = append(cellConnContent, v)
+	}
+
+	if !found {
+		return errors.New("no cell conn exists")
+	}
+
+	newRoom := *room
+	newCellConn := make(map[string][]string, len(room.CellConn))
+	for key, valSlice := range room.CellConn {
+		newCellConn[key] = append([]string(nil), valSlice...)
+	}
+	newCellConn[cellConnFrom] = cellConnContent
+	newRoom.CellConn = newCellConn
+
+	select {
+	case room.UserCh <- &newRoom:
+		return nil
+	default:
+		return errors.New("user channel is blocked")
+	}
 }
 
 // type SessionRepository interface {

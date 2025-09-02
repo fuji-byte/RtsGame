@@ -20,7 +20,8 @@ type IMemoryService interface {
 	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
 	StartGame(user *models.User) error
 	GetRoomInfo(roomId string) (*models.GameRoom, error)
-	UpdateRoom(userId, roomId, cellConnFrom, cellConnTo string) error
+	CellConn(userId, roomId, cellConnFrom, cellConnTo string) error
+	DelCellConn(userId, roomId, cellConnFrom, cellConnTo string) error
 }
 
 type MemoryService struct {
@@ -152,7 +153,7 @@ func (s *MemoryService) GetRoomInfo(roomId string) (*models.GameRoom, error) {
 	return roomInfo, err
 }
 
-func (s *MemoryService) UpdateRoom(userId, roomId, cellConnFrom, cellConnTo string) error {
+func (s *MemoryService) CellConn(userId, roomId, cellConnFrom, cellConnTo string) error {
 	room, err := s.memoryRepository.GetRoom(roomId)
 	if err != nil {
 		return err
@@ -166,6 +167,26 @@ func (s *MemoryService) UpdateRoom(userId, roomId, cellConnFrom, cellConnTo stri
 		return err
 	}
 	err = s.memoryRepository.AddCell(cellConnFrom, cellConnTo, room)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *MemoryService) DelCellConn(userId, roomId, cellConnFrom, cellConnTo string) error {
+	room, err := s.memoryRepository.GetRoom(roomId)
+	if err != nil {
+		return err
+	}
+	err = s.memoryRepository.CheckCells(cellConnFrom, cellConnTo, room)
+	if err != nil {
+		return err
+	}
+	err = s.memoryRepository.CompareCellId(userId, cellConnFrom, room)
+	if err != nil {
+		return err
+	}
+	err = s.memoryRepository.DelCell(cellConnFrom, cellConnTo, room)
 	if err != nil {
 		return err
 	}
