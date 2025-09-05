@@ -30,7 +30,6 @@ var upgrader = websocket.Upgrader{
 	// ReadBufferSize / WriteBufferSize	I/Oバッファのサイズ（バイト単位）	多数接続時や大規模アプリで最適化可能
 	// WriteBufferPool	書き込みバッファのプール	接続数が多く、GC削減したいときに有効
 	// Subprotocols	WebSocketのサブプロトコル（例: chat, json, etc.）	クライアントとプロトコルネゴシエート可
-	// Error	エラーハンドリングのカスタム処理	403 や 500 に独自のHTML出力など可能
 	// CheckOrigin	オリジンチェック（CORS対応）	本番ではここでOriginを検証すべき
 	// EnableCompression	per-message圧縮を有効化（RFC 7692）	クライアントがサポートしていれば圧縮される
 }
@@ -69,11 +68,9 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		// if err != nil {
 		// 	fmt.Println("user取得エラー")
 		// }
-		users, err := c.service.GetUsersByRoomId(user.RoomID)
-		if err != nil {
-			//roomが存在していない
-		}
-		err = c.service.DeleteUser(clientId)
+		//errは使わない　ユーザーがroomが存在していない場合があるから
+		users, _ := c.service.GetUsersByRoomId(user.RoomID)
+		err := c.service.DeleteUser(clientId)
 		if err != nil {
 			log.Fatal("DeleteUser Error")
 		}
@@ -81,6 +78,8 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		if users != nil {
 			broadcast(*users, "roomNum", "message", len(*users))
 			fmt.Println(users)
+		} else {
+			//もしuser==nilならroomがあれば削除する関数を作る
 		}
 		fmt.Println("切断後処理完了:", clientId)
 	}()
@@ -121,7 +120,6 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				user.Send(`{"type":"roomNum", "message":"1"}`)
 				user.Send(`{"type":"host"}`)
 			case "joinRoom":
-				// needed roomId
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
@@ -180,8 +178,8 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				fmt.Println("GameRoomInput の解析に失敗:", err)
 				continue
 			}
-			switch raw.Type {
-			case "cellConn":
+			switch receivedMsg.Type {
+			case "addCellConn":
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
@@ -191,6 +189,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				err = c.service.CellConn(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo)
 				if err != nil {
 					user.Send(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`)
+					fmt.Printf("%s", err)
 					continue
 				}
 				continue
@@ -249,24 +248,3 @@ func broadcast[T int | float32 | string](
 		user.Send(message)
 	}
 }
-
-// type SessionHandler struct {
-// 	service *services.SessionService
-// }
-
-// func NewSessionHandler(service *services.SessionService) *SessionHandler {
-// 	//redisは接続の状態を保存するもので、接続を保存するものではない
-// 	return &SessionHandler{service: service}
-// }
-
-// func (h *SessionHandler) Login(c *gin.Context) {
-// 	userID := c.Query("user_id")
-// 	data := "logged_in"
-
-// 	err := h.service.Login(userID, data)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to login"})
-// 		return
-// 	}
-// 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-// }

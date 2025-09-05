@@ -67,11 +67,6 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 		return "", errors.New("user already in a Room")
 	}
 	roomId := uuid.New().String()
-	//memoryの編集はrepositoryのほうがいいかも
-	// err = s.memoryRepository.SetRoomId(user, roomId)
-	// if err != nil {
-	// 	return "", err
-	// }
 
 	players := map[string]*models.User{
 		clientId: user,
@@ -114,6 +109,7 @@ func (s *MemoryService) JoinRoom(roomId string, user *models.User) (*map[string]
 	return tempRoom, nil
 }
 
+// 設計がよくないので作り直し（ルームを読み込み、ここからルームを送信している）
 func (s *MemoryService) StartGame(user *models.User) error {
 	//hostかどうか、ほかにプレイヤーが一人以上いるか
 	roomId := user.RoomID
@@ -133,15 +129,12 @@ func (s *MemoryService) StartGame(user *models.User) error {
 		return err
 	}
 	ch := make(chan *models.GameRoom)
-	userch := make(chan *models.GameRoom)
-	signal := make(chan string) //合図用のチャネル
-	err = s.memoryRepository.SetCh(room, signal, ch, userch)
+	userch := make(chan *models.GameRoom, 10)
+	err = s.memoryRepository.SetCh(room, ch, userch)
 	if err != nil {
 		return err
 	}
-	// go s.memoryRepository.UpdateRoom(ch, &models.GameRoom{})
-	go s.memoryRepository.TempRoom(signal, ch, userch, room)
-	go s.memoryRepository.RunGame(signal, ch, room)
+	go s.memoryRepository.RunGame(userch, ch, room)
 	return nil
 }
 
@@ -166,7 +159,7 @@ func (s *MemoryService) CellConn(userId, roomId, cellConnFrom, cellConnTo string
 	if err != nil {
 		return err
 	}
-	err = s.memoryRepository.AddCell(cellConnFrom, cellConnTo, room)
+	err = s.memoryRepository.AddCellConn(cellConnFrom, cellConnTo, room)
 	if err != nil {
 		return err
 	}
@@ -192,28 +185,3 @@ func (s *MemoryService) DelCellConn(userId, roomId, cellConnFrom, cellConnTo str
 	}
 	return nil
 }
-
-// func (s *MemoryService) RunGame(room *models.GameRoom) error {
-
-// 	go s.memoryRepository.RunGmae()
-// }
-
-// type SessionService struct {
-// 	sessionRepo repositories.SessionRepository
-// }
-
-// func NewSessionService(repo repositories.SessionRepository) *SessionService {
-// 	return &SessionService{sessionRepo: repo}
-// }
-
-// func (s *SessionService) Login(userID string, sessionData string) error {
-// 	return s.sessionRepo.SetSession(userID, sessionData)
-// }
-
-// func (s *SessionService) Logout(userID string) error {
-// 	return s.sessionRepo.DeleteSession(userID)
-// }
-
-// func (s *SessionService) GetSessionData(userID string) (string, error) {
-// 	return s.sessionRepo.GetSession(userID)
-// }

@@ -30,9 +30,8 @@ type MessageOutput struct {
 
 type GameRoomInput struct {
 	Type         string `json:"type"`
-	CellConnFrom string `json:"cellConnFrom"`
-	CellConnTo   string `json:"cellConnTo"`
-	CellId       string `json:"cellid"`
+	CellConnFrom string `json:"cFrom"`
+	CellConnTo   string `json:"cTo"`
 }
 
 type GameRoomOutput struct {
