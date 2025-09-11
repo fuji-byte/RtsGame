@@ -10,12 +10,10 @@ import (
 type User struct {
 	ID       string //clientId　一応primaryKey
 	Name     string
-	Color    string
 	IsOnline bool
 	Conn     *websocket.Conn
 	RoomID   string
-	// Mu       sync.Mutex
-	SendCh chan []byte
+	SendCh   chan []byte
 }
 
 func (u *User) StartWriter() {

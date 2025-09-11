@@ -33,7 +33,7 @@ func NewMemoryService(memoryRepository repositories.IMemoryRepository) IMemorySe
 }
 
 func (s *MemoryService) CreateUser(clientId string, conn *websocket.Conn) (*models.User, error) {
-	newUser := &models.User{ID: clientId, Name: "guest", Color: "blue", IsOnline: true, Conn: conn, SendCh: make(chan []byte, 256), RoomID: "-1"}
+	newUser := &models.User{ID: clientId, Name: "guest", IsOnline: true, Conn: conn, SendCh: make(chan []byte, 256), RoomID: "-1"}
 	return s.memoryRepository.CreateUser(newUser)
 }
 
@@ -79,7 +79,7 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 		Observers:   observers,
 		HostPlayer:  user,
 		Cells:       make(map[string]*models.Cell),
-		CellConn:    make(map[string][]string),
+		CellConn:    make(map[string]map[string]int),
 		Started:     false,
 		TimeLeftSec: 120,
 	}
@@ -117,6 +117,9 @@ func (s *MemoryService) StartGame(user *models.User) error {
 	if err != nil {
 		return err
 	}
+	if room.Started {
+		return errors.New("the room is always started")
+	}
 	if user.ID != room.HostPlayer.ID {
 		return errors.New("the user is not host")
 	}
@@ -129,12 +132,13 @@ func (s *MemoryService) StartGame(user *models.User) error {
 		return err
 	}
 	ch := make(chan *models.GameRoom)
+	signal := make(chan string)
 	userch := make(chan *models.GameRoom, 10)
-	err = s.memoryRepository.SetCh(room, ch, userch)
+	err = s.memoryRepository.SetCh(room, ch, userch, signal)
 	if err != nil {
 		return err
 	}
-	go s.memoryRepository.RunGame(userch, ch, room)
+	go s.memoryRepository.RunGame(signal, userch, ch, room)
 	return nil
 }
 

@@ -161,7 +161,16 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 					user.Send(`{"type":"errorMessage","message":"ルームメンバーを取得できませんでした。","error": "couldn't get the room member(s) Error"}`)
 					continue
 				}
-				broadcast(*room, "gameStart", "gameStart", "game start")
+
+				for _, user := range *room {
+					if user == nil {
+						fmt.Printf("send Message Error to user\n")
+						continue
+					}
+					msg := fmt.Sprintf(`{"type":"%v", "%v": "%v"}`, "gameStart", "message", user.ID)
+					user.Send(msg)
+				}
+				// broadcast(*room, "gameStart", "gameStart", "game start")
 				//この辺でgo funcで継続的にbroadcastするか
 			case "observe":
 				//roomのobserverに追加
@@ -189,7 +198,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				err = c.service.CellConn(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo)
 				if err != nil {
 					user.Send(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`)
-					fmt.Printf("%s", err)
+					fmt.Printf("%s\n", err)
 					continue
 				}
 				continue
@@ -203,6 +212,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				err = c.service.DelCellConn(user.ID, user.RoomID, receivedMsg.CellConnFrom, receivedMsg.CellConnTo)
 				if err != nil {
 					user.Send(`{"type":"errorMessage","message":"ルームデータをアップデートできませんでした。","error": "couldn't update the room Error"}`)
+					fmt.Printf("%s\n", err)
 					continue
 				}
 				continue

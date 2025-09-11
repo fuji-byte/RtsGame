@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"math/rand"
 	"sync"
 	"time"
@@ -25,9 +26,9 @@ type IMemoryRepository interface {
 	GetRoom(roomId string) (*models.GameRoom, error)
 	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
 	SetGame(room *models.GameRoom) error
-	RunGame(userCh chan *models.GameRoom, ch chan *models.GameRoom, room *models.GameRoom) error
+	RunGame(signal chan string, userCh chan *models.GameRoom, ch chan *models.GameRoom, room *models.GameRoom) error
 	// TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error)
-	SetCh(room *models.GameRoom, ch chan *models.GameRoom, userch chan *models.GameRoom) error
+	SetCh(room *models.GameRoom, ch chan *models.GameRoom, userch chan *models.GameRoom, signal chan string) error
 	SaveLogRoom(room *models.GameRoom) error
 	CheckCells(cellConnFrom, cellConnTo string, room *models.GameRoom) error
 	CompareCellId(clientId, cellId string, room *models.GameRoom) error
@@ -81,7 +82,9 @@ func (s *MemoryRepository) DeleteUser(clientId string) error {
 func (s *MemoryRepository) DeleteUserInRoom(room *models.GameRoom, clientId string) error {
 	delete(room.Players, clientId)
 	//ホストの変更もしくはルームの削除を行う
+	//観戦者を含めるか
 	if len(room.Players) == 0 {
+		room.Signal <- "end"
 		delete(s.memoryGameRoom, room.ID)
 		return nil
 	}
@@ -228,7 +231,7 @@ func (s *MemoryRepository) SetGame(room *models.GameRoom) error {
 }
 
 // chの使い道無い　現在
-func (s *MemoryRepository) RunGame(userCh chan *models.GameRoom, ch chan *models.GameRoom, room *models.GameRoom) error {
+func (s *MemoryRepository) RunGame(signal chan string, userCh chan *models.GameRoom, ch chan *models.GameRoom, room *models.GameRoom) error {
 	updateTicker := time.NewTicker(30 * time.Millisecond)
 	endTimer := time.After(time.Duration(room.TimeLeftSec) * time.Second)
 	defer updateTicker.Stop()
@@ -246,11 +249,12 @@ func (s *MemoryRepository) RunGame(userCh chan *models.GameRoom, ch chan *models
 			//test検証後にアップデートする
 			//ルームのプレイヤーが０になったらsavelog以外消す？
 			// 再接続可能にするか
+			//更新した部分だけ、プレイヤーに送信する　例　時間だけ更新、cellConnだけ更新
+			s.Update(room)
 			// room, err := s.TestRoom(ch)
 			// if err != nil {
 			// 	return err
 			// }
-			room.TimeLeftSec -= 0.03
 			s.Broadcast(room)
 			s.SaveLogRoom(room)
 		case <-endTimer:
@@ -258,7 +262,14 @@ func (s *MemoryRepository) RunGame(userCh chan *models.GameRoom, ch chan *models
 			log.Println("ルームのタイムアウトにより終了します:", room.ID)
 			// room.End()
 			//またはチャネルによて終了シグナルが出たとき
+			room.Started = false
 			return nil
+		case msg := <-signal:
+			if msg == "end" {
+				room.Started = false
+				log.Println("ユーザーが存在しないため、ルーム通信を終了します:", room.ID)
+				return nil
+			}
 		}
 	}
 }
@@ -271,6 +282,18 @@ func (s *MemoryRepository) RunGame(userCh chan *models.GameRoom, ch chan *models
 // 	//ここでnewRoomとroomを比較し、異常がないか検知する。現時点でのチート対策はない
 // 	return room, nil
 // }
+
+func (s *MemoryRepository) Update(room *models.GameRoom) error {
+	room.TimeLeftSec -= 0.03
+
+	for _, inner := range room.CellConn {
+		for innerK := range inner {
+			inner[innerK] += 1
+		}
+	}
+
+	return nil
+}
 
 func (s *MemoryRepository) SaveLogRoom(room *models.GameRoom) error {
 
@@ -299,15 +322,15 @@ func (s *MemoryRepository) Broadcast(room *models.GameRoom) error {
 	return nil
 }
 
-func (s *MemoryRepository) SetCh(room *models.GameRoom, ch chan *models.GameRoom, userch chan *models.GameRoom) error {
+func (s *MemoryRepository) SetCh(room *models.GameRoom, ch chan *models.GameRoom, userch chan *models.GameRoom, signal chan string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if room == nil {
 		return errors.New("empty room")
 	}
-	// (*room).Signal = signal
 	(*room).Ch = ch
 	(*room).UserCh = userch
+	(*room).Signal = signal
 	return nil
 }
 
@@ -348,21 +371,24 @@ func (s *MemoryRepository) AddCellConn(cellConnFrom, cellConnTo string, room *mo
 	// }
 
 	//cellConnFrom検証している前提
-	slice := room.CellConn[cellConnFrom]
-	//ここは参照しているだけなので安全
-	for _, v := range slice {
-		if v == cellConnTo {
-			return errors.New("cell conn already exists")
-		}
+	if _, exists := room.CellConn[cellConnFrom][cellConnTo]; exists {
+		return errors.New("cell conn already exists")
 	}
+
 	newRoom := *room
 	// CellConn のディープコピー
-	newCellConn := make(map[string][]string, len(room.CellConn))
-	for key, slice := range room.CellConn {
-		newCellConn[key] = append([]string(nil), slice...)
+	newCellConn := make(map[string]map[string]int, len(room.CellConn))
+	for k, v := range room.CellConn {
+		innerCopy := make(map[string]int, len(v))
+		maps.Copy(innerCopy, v) // 内側のマップをコピー
+		newCellConn[k] = innerCopy
 	}
+
 	// 新しい接続を追加
-	newCellConn[cellConnFrom] = append(newCellConn[cellConnFrom], cellConnTo)
+	if _, ok := newCellConn[cellConnFrom]; !ok {
+		newCellConn[cellConnFrom] = make(map[string]int)
+	}
+	newCellConn[cellConnFrom][cellConnTo] = 0
 	newRoom.CellConn = newCellConn
 
 	//検証後にroomに保存する
@@ -378,34 +404,23 @@ func (s *MemoryRepository) DelCellConn(cellConnFrom, cellConnTo string, room *mo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if room == nil {
-		return errors.New("empty room")
-	}
-	slice, ok := room.CellConn[cellConnFrom]
-	if !ok {
+	// if room == nil {
+	// 	return errors.New("empty room")
+	// }
+	if _, exists := room.CellConn[cellConnFrom][cellConnTo]; !exists {
 		return errors.New("no such key exists")
 	}
 
-	cellConnContent := make([]string, 0, len(slice))
-	found := false
-	for _, v := range slice {
-		if v == cellConnTo {
-			found = true
-			continue
-		}
-		cellConnContent = append(cellConnContent, v)
-	}
-
-	if !found {
-		return errors.New("no cell conn exists")
-	}
-
 	newRoom := *room
-	newCellConn := make(map[string][]string, len(room.CellConn))
-	for key, valSlice := range room.CellConn {
-		newCellConn[key] = append([]string(nil), valSlice...)
+	// CellConn のディープコピー
+	newCellConn := make(map[string]map[string]int, len(room.CellConn))
+	for k, v := range room.CellConn {
+		innerCopy := make(map[string]int, len(v))
+		maps.Copy(innerCopy, v) // 内側のマップをコピー
+		newCellConn[k] = innerCopy
 	}
-	newCellConn[cellConnFrom] = cellConnContent
+
+	delete(newCellConn[cellConnFrom], cellConnTo)
 	newRoom.CellConn = newCellConn
 
 	select {

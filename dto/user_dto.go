@@ -36,6 +36,6 @@ type GameRoomInput struct {
 
 type GameRoomOutput struct {
 	Cells       map[string]*models.Cell
-	CellConn    map[string][]string
+	CellConn    map[string]map[string]int
 	TimeLeftSec float32
 }

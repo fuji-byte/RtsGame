@@ -1,7 +1,8 @@
 package models
 
-// redisで保管予定
+// redisでキャッシュで保管予定（db実装後）
 // on memory
+
 type GameRoom struct {
 	ID string `gorm:"primaryKey"`
 	// Key string
@@ -10,8 +11,8 @@ type GameRoom struct {
 	Observers   map[string]*User
 	HostPlayer  *User
 	Cells       map[string]*Cell
-	CellConn    map[string][]string //cell connectionを保存する。
-	Started     bool                //default false
+	CellConn    map[string]map[string]int //cell connectionとその進捗
+	Started     bool                      //default false
 	TimeLeftSec float32
 	Signal      chan string
 	Ch          chan *GameRoom
