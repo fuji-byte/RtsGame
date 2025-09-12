@@ -16,6 +16,7 @@ type IMemoryService interface {
 	GetAllUser() (*map[string]*models.User, error)
 	GetUserByClientId(clientId string) (*models.User, error)
 	MakeRoom(clientId string) (string, error)
+	DeleteRoom(roomId string) error
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
 	StartGame(user *models.User) error
@@ -89,6 +90,10 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 		return "", err
 	}
 	return roomId, nil
+}
+
+func (s *MemoryService) DeleteRoom(roomId string) error {
+	return s.memoryRepository.DeleteRoom(roomId)
 }
 
 func (s *MemoryService) GetUsersByRoomId(Id string) (*map[string]*models.User, error) {

@@ -1,6 +1,12 @@
 package main
 
 import (
+	"log"
+	"runtime"
+
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"main.go/controllers"
@@ -10,14 +16,16 @@ import (
 )
 
 func main() {
-
+	runtime.SetMutexProfileFraction(1)
+	go func() {
+		log.Println("pprof サーバー起動: http://localhost:6060/debug/pprof/")
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			log.Println("pprof サーバー終了:", err)
+		}
+	}()
 	users := make(map[string]*models.User, 0)
 	cells := make(map[string]*models.Cell, 0)
 	gameRooms := make(map[string]*models.GameRoom, 0)
-	// redisClient := infra.NewRedisClient()
-	// RedisSessionRepository := repositories.NewRedisSessionRepository(redisClient)
-	// RedisSessionService := services.NewSessionService(RedisSessionRepository)
-	// RedisSessionController := controllers.NewSessionHandler(RedisSessionService)
 	userMemoryRepository := repositories.NewMemoryRepository(users, cells, gameRooms)
 	userMemoryService := services.NewMemoryService(userMemoryRepository)
 	userController := controllers.NewMemoryController(userMemoryService)
@@ -35,7 +43,7 @@ func main() {
 
 	r.GET("/ws", userController.HandleWebSocket)
 	// r.GET("/login", RedisSessionController.Login)
-	r.Run(":8080") // localhost:8080 でサーバーを立てます。
+	r.Run(":8080")
 }
 
 //cookieにより一度ログインしたら自動認証できるようにする

@@ -23,6 +23,7 @@ type IMemoryRepository interface {
 	GetUserByClientId(Id string) (*models.User, error)
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	MakeRoom(room *models.GameRoom, user *models.User) (*models.GameRoom, error)
+	DeleteRoom(roomId string) error
 	GetRoom(roomId string) (*models.GameRoom, error)
 	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
 	SetGame(room *models.GameRoom) error
@@ -63,11 +64,11 @@ func (s *MemoryRepository) DeleteUser(clientId string) error {
 	if user == nil || err != nil {
 		return err
 	}
-	room, _ := s.GetRoom(user.RoomID)
+	// room, _ := s.GetRoom(user.RoomID)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if room != nil {
+	if room := s.memoryGameRoom[user.RoomID]; room != nil {
 		s.DeleteUserInRoom(room, clientId)
 	}
 
@@ -83,10 +84,27 @@ func (s *MemoryRepository) DeleteUserInRoom(room *models.GameRoom, clientId stri
 	delete(room.Players, clientId)
 	//ホストの変更もしくはルームの削除を行う
 	//観戦者を含めるか
-	if len(room.Players) == 0 {
-		room.Signal <- "end"
+	if len(room.Players) <= 0 {
+		select {
+		case room.Signal <- "end":
+			log.Println("ルーム終了シグナル送信:", room.ID)
+		default:
+			// 既に closed か、受信バッファが満杯など
+			log.Println("signal チャネルに送れませんでした（既に閉じられているかブロック）:", room.ID)
+		}
 		delete(s.memoryGameRoom, room.ID)
 		return nil
+		// if room.Signal != nil {
+		// 	close(room.Signal)
+		// }
+		// if room.UserCh != nil {
+		// 	close(room.UserCh)
+		// }
+		// if room.Ch != nil {
+		// 	close(room.Ch)
+		// }
+		// delete(s.memoryGameRoom, room.ID)
+		// return nil
 	}
 	if clientId == room.HostPlayer.ID {
 		//host譲渡をここに書く また、hostが変更されたらhostになった人に通知
@@ -149,12 +167,32 @@ func (s *MemoryRepository) MakeRoom(room *models.GameRoom, user *models.User) (*
 	return room, nil
 }
 
+func (s *MemoryRepository) DeleteRoom(roomId string) error {
+	// s.mu.Lock()
+	// defer s.mu.Unlock()
+	// room := s.memoryGameRoom[roomId]
+	// if room == nil {
+	// 	return errors.New("empty room")
+	// }
+	// if room.Signal != nil {
+	// 	close(room.Signal)
+	// }
+	// if room.UserCh != nil {
+	// 	close(room.UserCh)
+	// }
+	// if room.Ch != nil {
+	// 	close(room.Ch)
+	// }
+	// delete(s.memoryGameRoom, roomId)
+	return nil
+}
+
 func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	room := s.memoryGameRoom[roomId]
 	if room == nil {
-		return nil, errors.New("room not found")
+		return nil, errors.New("empty room")
 	}
 	tempUsers := make(map[string]*models.User)
 
@@ -188,14 +226,20 @@ func (s *MemoryRepository) makeCell(clientId string, room *models.GameRoom) (*mo
 	screenHeight := 640.0
 	margin := 20.0
 
+	active := false
+	if clientId != "" {
+		active = true
+	}
+
 	cell := models.Cell{
 		ID:       uuid.New().String(),
 		PlayerID: clientId,
-		Hp:       10,
+		Progress: 0,
 		X:        rand.Float64()*(screenWidth-2*margin) + margin,
 		Y:        rand.Float64()*(screenHeight-2*margin) + margin,
 		Rank:     1,
-		Power:    1,
+		// Power:    1,
+		Active: active,
 	}
 
 	room.Cells[cell.ID] = &cell
@@ -235,10 +279,35 @@ func (s *MemoryRepository) RunGame(signal chan string, userCh chan *models.GameR
 	updateTicker := time.NewTicker(30 * time.Millisecond)
 	endTimer := time.After(time.Duration(room.TimeLeftSec) * time.Second)
 	defer updateTicker.Stop()
+	// チャネル閉鎖は once で一回だけ
+
+	closeOnce := sync.Once{}
+	closeRoomChannels := func() {
+		closeOnce.Do(func() {
+			if room.Signal != nil {
+				close(room.Signal)
+			}
+			if room.UserCh != nil {
+				close(room.UserCh)
+			}
+			if room.Ch != nil {
+				close(room.Ch)
+			}
+			s.mu.Lock()
+			delete(s.memoryGameRoom, room.ID)
+			s.mu.Unlock()
+			log.Println("ルームチャネルを安全に閉じました:", room.ID)
+		})
+	}
 
 	for {
 		select {
-		case newRoom := <-userCh:
+		case newRoom, ok := <-userCh:
+			if !ok {
+				log.Println("userCh が閉じられました:", room.ID)
+				closeRoomChannels()
+				return nil
+			}
 			// ユーザー入力を反映
 			// newRoom の情報で room を更新する
 			*room = *newRoom
@@ -256,18 +325,23 @@ func (s *MemoryRepository) RunGame(signal chan string, userCh chan *models.GameR
 			// 	return err
 			// }
 			s.Broadcast(room)
-			s.SaveLogRoom(room)
+			// s.SaveLogRoom(room)
 		case <-endTimer:
 			// 120秒経過でルームを終了
 			log.Println("ルームのタイムアウトにより終了します:", room.ID)
-			// room.End()
 			//またはチャネルによて終了シグナルが出たとき
-			room.Started = false
+			signal <- "end"
 			return nil
-		case msg := <-signal:
+		case msg, ok := <-signal:
+			if !ok {
+				log.Println("signal チャネルが閉じられました:", room.ID)
+				closeRoomChannels()
+				return nil
+			}
 			if msg == "end" {
 				room.Started = false
 				log.Println("ユーザーが存在しないため、ルーム通信を終了します:", room.ID)
+				closeRoomChannels()
 				return nil
 			}
 		}
@@ -284,11 +358,42 @@ func (s *MemoryRepository) RunGame(signal chan string, userCh chan *models.GameR
 // }
 
 func (s *MemoryRepository) Update(room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	room.TimeLeftSec -= 0.03
 
-	for _, inner := range room.CellConn {
+	//すべてのcell(active)の管理
+	for _, inner := range room.Cells {
+		if inner.Active {
+			inner.Progress += 1
+			if inner.Progress >= 100 {
+				inner.Progress = 0
+				inner.Rank += 1
+			}
+		}
+	}
+
+	//接続しているcellの管理 k = cellConnFrom ,innerK = cellConnTo
+	for k, inner := range room.CellConn {
 		for innerK := range inner {
 			inner[innerK] += 1
+			if inner[innerK] >= 50 {
+				inner[innerK] = 0
+				cell := room.Cells[innerK]
+				if cell.PlayerID == room.Cells[k].PlayerID {
+					cell.Rank += 1
+				} else {
+					cell.Rank -= 1
+					//cell dead
+					if cell.Rank <= 0 {
+						cell.PlayerID = room.Cells[k].PlayerID
+						room.CellConn[innerK] = make(map[string]int)
+						cell.Active = true
+						cell.Rank = 0
+					}
+				}
+			}
 		}
 	}
 
@@ -296,13 +401,16 @@ func (s *MemoryRepository) Update(room *models.GameRoom) error {
 }
 
 func (s *MemoryRepository) SaveLogRoom(room *models.GameRoom) error {
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	//プロトタイプ完成後に実装。
 	//データベースなどにjsonで予定
 	return nil
 }
 
 func (s *MemoryRepository) Broadcast(room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	sendMessage := &dto.GameRoomOutput{
 		Cells:       room.Cells,
 		CellConn:    room.CellConn,
@@ -373,6 +481,16 @@ func (s *MemoryRepository) AddCellConn(cellConnFrom, cellConnTo string, room *mo
 	//cellConnFrom検証している前提
 	if _, exists := room.CellConn[cellConnFrom][cellConnTo]; exists {
 		return errors.New("cell conn already exists")
+	}
+
+	if room.Cells[cellConnFrom].Rank/10+1 <= len(room.CellConn[cellConnFrom]) {
+		return errors.New("cell conn already max")
+	}
+
+	if _, exists := room.CellConn[cellConnTo][cellConnFrom]; exists {
+		if room.Cells[cellConnFrom].PlayerID == room.Cells[cellConnTo].PlayerID {
+			return errors.New("cycle is not permitted")
+		}
 	}
 
 	newRoom := *room

@@ -78,8 +78,6 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		if users != nil {
 			broadcast(*users, "roomNum", "message", len(*users))
 			fmt.Println(users)
-		} else {
-			//もしuser==nilならroomがあれば削除する関数を作る
 		}
 		fmt.Println("切断後処理完了:", clientId)
 	}()
@@ -89,7 +87,9 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 		_, msg, err := user.Conn.ReadMessage()
 		if err != nil {
 			fmt.Println("接続が切断されました:", err)
-			return
+			user.Cleanup()
+			// pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+			break
 		}
 		// fmt.Printf("受信メッセージ: %s\n", msg)
 		fmt.Printf("メッセージを受信しました\n")
@@ -170,8 +170,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 					msg := fmt.Sprintf(`{"type":"%v", "%v": "%v"}`, "gameStart", "message", user.ID)
 					user.Send(msg)
 				}
-				// broadcast(*room, "gameStart", "gameStart", "game start")
-				//この辺でgo funcで継続的にbroadcastするか
+				continue
 			case "observe":
 				//roomのobserverに追加
 				//終わるまでか、観戦キャンセルされるまでずっとブロードキャスト

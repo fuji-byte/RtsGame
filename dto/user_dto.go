@@ -20,13 +20,13 @@ type MessageInput struct {
 	GameRoom models.GameRoom `json:"gameRoom"`
 }
 
-type MessageOutput struct {
-	Type    string `json:"type"`
-	Option  string `json:"option"`
-	RoomID  string `json:"roomId"`
-	Message string `json:"message"`
-	Error   error  `json:"err"`
-}
+// type MessageOutput struct {
+// 	Type    string `json:"type"`
+// 	Option  string `json:"option"`
+// 	RoomID  string `json:"roomId"`
+// 	Message string `json:"message"`
+// 	Error   error  `json:"err"`
+// }
 
 type GameRoomInput struct {
 	Type         string `json:"type"`
