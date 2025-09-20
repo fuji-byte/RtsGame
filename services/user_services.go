@@ -16,9 +16,9 @@ type IMemoryService interface {
 	GetAllUser() (*map[string]*models.User, error)
 	GetUserByClientId(clientId string) (*models.User, error)
 	MakeRoom(clientId string) (string, error)
-	DeleteRoom(roomId string) error
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
+	LeaveRoom(user *models.User) error
 	StartGame(user *models.User) error
 	GetRoomInfo(roomId string) (*models.GameRoom, error)
 	CellConn(userId, roomId, cellConnFrom, cellConnTo string) error
@@ -82,7 +82,7 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 		Cells:       make(map[string]*models.Cell),
 		CellConn:    make(map[string]map[string]int),
 		Started:     false,
-		TimeLeftSec: 120,
+		TimeLeftSec: 5,
 	}
 	// user, err := s.GetUserByClientId(clientId)
 	_, err = s.memoryRepository.MakeRoom(newRoom, user)
@@ -90,10 +90,6 @@ func (s *MemoryService) MakeRoom(clientId string) (string, error) {
 		return "", err
 	}
 	return roomId, nil
-}
-
-func (s *MemoryService) DeleteRoom(roomId string) error {
-	return s.memoryRepository.DeleteRoom(roomId)
 }
 
 func (s *MemoryService) GetUsersByRoomId(Id string) (*map[string]*models.User, error) {
@@ -112,6 +108,14 @@ func (s *MemoryService) JoinRoom(roomId string, user *models.User) (*map[string]
 	// room.Players[user.ID] = user
 	// (*user).RoomID = roomId
 	return tempRoom, nil
+}
+
+func (s *MemoryService) LeaveRoom(user *models.User) error {
+	room, err := s.memoryRepository.GetRoom(user.RoomID)
+	if err != nil {
+		return err
+	}
+	return s.memoryRepository.LeaveRoom(user, room)
 }
 
 // 設計がよくないので作り直し（ルームを読み込み、ここからルームを送信している）
@@ -137,7 +141,7 @@ func (s *MemoryService) StartGame(user *models.User) error {
 		return err
 	}
 	ch := make(chan *models.GameRoom)
-	signal := make(chan string)
+	signal := make(chan string, 5)
 	userch := make(chan *models.GameRoom, 10)
 	err = s.memoryRepository.SetCh(room, ch, userch, signal)
 	if err != nil {

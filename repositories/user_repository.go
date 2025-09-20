@@ -23,9 +23,9 @@ type IMemoryRepository interface {
 	GetUserByClientId(Id string) (*models.User, error)
 	GetUsersByRoomId(Id string) (*map[string]*models.User, error)
 	MakeRoom(room *models.GameRoom, user *models.User) (*models.GameRoom, error)
-	DeleteRoom(roomId string) error
 	GetRoom(roomId string) (*models.GameRoom, error)
 	JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error)
+	LeaveRoom(user *models.User, room *models.GameRoom) error
 	SetGame(room *models.GameRoom) error
 	RunGame(signal chan string, userCh chan *models.GameRoom, ch chan *models.GameRoom, room *models.GameRoom) error
 	// TestRoom(ch chan *models.GameRoom) (*models.GameRoom, error)
@@ -82,6 +82,7 @@ func (s *MemoryRepository) DeleteUser(clientId string) error {
 // 呼び出し元関数でmutexをしておくこと、roomがnilでないか確認しておくこと
 func (s *MemoryRepository) DeleteUserInRoom(room *models.GameRoom, clientId string) error {
 	delete(room.Players, clientId)
+	// delete(room.Observers, clientId)
 	//ホストの変更もしくはルームの削除を行う
 	//観戦者を含めるか
 	if len(room.Players) <= 0 {
@@ -94,17 +95,6 @@ func (s *MemoryRepository) DeleteUserInRoom(room *models.GameRoom, clientId stri
 		}
 		delete(s.memoryGameRoom, room.ID)
 		return nil
-		// if room.Signal != nil {
-		// 	close(room.Signal)
-		// }
-		// if room.UserCh != nil {
-		// 	close(room.UserCh)
-		// }
-		// if room.Ch != nil {
-		// 	close(room.Ch)
-		// }
-		// delete(s.memoryGameRoom, room.ID)
-		// return nil
 	}
 	if clientId == room.HostPlayer.ID {
 		//host譲渡をここに書く また、hostが変更されたらhostになった人に通知
@@ -113,9 +103,18 @@ func (s *MemoryRepository) DeleteUserInRoom(room *models.GameRoom, clientId stri
 			firstUser = v
 			break // 最初の要素でループを抜ける
 		}
-		s.memoryGameRoom[room.ID].HostPlayer.ID = firstUser.ID
+		s.memoryGameRoom[room.ID].HostPlayer = firstUser
+		for _, v := range room.Players {
+			v.Send(`{"type":"message","message":"ルームから退出しました。"}`)
+		}
 		firstUser.Send(`{"type":"host"}`)
 		firstUser.Send(`{"type":"message","message":"このルームのホストになりました。"}`)
+	}
+	for _, v := range room.Players {
+		v.Send(fmt.Sprintf(`{"type":"roomNum","message":%d}`, len(room.Players))) //playerの数だけ
+	}
+	for _, v := range room.Observers {
+		v.Send(fmt.Sprintf(`{"type":"roomNum","message":%d}`, len(room.Players))) //playerの数だけ
 	}
 	return nil
 }
@@ -153,7 +152,7 @@ func (s *MemoryRepository) GetUsersByRoomId(Id string) (*map[string]*models.User
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	users, ok := s.memoryGameRoom[Id]
-	if !ok {
+	if !ok || users.Players == nil {
 		return nil, errors.New("nil pointer room")
 	}
 	return &users.Players, nil
@@ -165,26 +164,6 @@ func (s *MemoryRepository) MakeRoom(room *models.GameRoom, user *models.User) (*
 	s.memoryGameRoom[(*room).ID] = room
 	(*user).RoomID = (*room).ID
 	return room, nil
-}
-
-func (s *MemoryRepository) DeleteRoom(roomId string) error {
-	// s.mu.Lock()
-	// defer s.mu.Unlock()
-	// room := s.memoryGameRoom[roomId]
-	// if room == nil {
-	// 	return errors.New("empty room")
-	// }
-	// if room.Signal != nil {
-	// 	close(room.Signal)
-	// }
-	// if room.UserCh != nil {
-	// 	close(room.UserCh)
-	// }
-	// if room.Ch != nil {
-	// 	close(room.Ch)
-	// }
-	// delete(s.memoryGameRoom, roomId)
-	return nil
 }
 
 func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*map[string]*models.User, error) {
@@ -206,6 +185,14 @@ func (s *MemoryRepository) JoinRoom(roomId string, user *models.User) (*map[stri
 	(*room).Players[user.ID] = user
 	(*user).RoomID = roomId
 	return &tempUsers, nil
+}
+
+func (s *MemoryRepository) LeaveRoom(user *models.User, room *models.GameRoom) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	//room != nil確認済み
+	user.RoomID = "-1"
+	return s.DeleteUserInRoom(room, user.ID)
 }
 
 func (s *MemoryRepository) GetRoom(roomId string) (*models.GameRoom, error) {
@@ -320,18 +307,17 @@ func (s *MemoryRepository) RunGame(signal chan string, userCh chan *models.GameR
 			// 再接続可能にするか
 			//更新した部分だけ、プレイヤーに送信する　例　時間だけ更新、cellConnだけ更新
 			s.Update(room)
+			s.Broadcast(room)
+			// s.SaveLogRoom(room)
 			// room, err := s.TestRoom(ch)
 			// if err != nil {
 			// 	return err
 			// }
-			s.Broadcast(room)
-			// s.SaveLogRoom(room)
 		case <-endTimer:
 			// 120秒経過でルームを終了
-			log.Println("ルームのタイムアウトにより終了します:", room.ID)
+			fmt.Println("ルームのタイムアウトにより終了します:", room.ID)
 			//またはチャネルによて終了シグナルが出たとき
 			signal <- "end"
-			return nil
 		case msg, ok := <-signal:
 			if !ok {
 				log.Println("signal チャネルが閉じられました:", room.ID)
@@ -340,7 +326,11 @@ func (s *MemoryRepository) RunGame(signal chan string, userCh chan *models.GameR
 			}
 			if msg == "end" {
 				room.Started = false
-				log.Println("ユーザーが存在しないため、ルーム通信を終了します:", room.ID)
+				for _, v := range room.Players {
+					v.RoomID = "-1"
+					v.Send(`{"type":"gameSet"}`)
+				}
+				fmt.Println("send game set")
 				closeRoomChannels()
 				return nil
 			}

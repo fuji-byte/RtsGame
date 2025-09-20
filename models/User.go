@@ -29,12 +29,6 @@ func (u *User) StartWriter() {
 
 // Send は SendCh にメッセージを送る
 func (u *User) Send(msg string) {
-	// defer func() {
-	//     if r := recover(); r != nil {
-	//         fmt.Println("SendCh が既に閉じられているため送信をスキップ:", r)
-	//     }
-	// }()
-
 	select {
 	case u.SendCh <- []byte(msg):
 	default:

@@ -91,7 +91,7 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			// pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 			break
 		}
-		// fmt.Printf("受信メッセージ: %s\n", msg)
+		fmt.Printf("受信メッセージ: %s\n", msg)
 		fmt.Printf("メッセージを受信しました\n")
 		var raw dto.TypeInput
 		// var receivedMsg dto.MessageInput
@@ -119,11 +119,12 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				user.Send(fmt.Sprintf(`{"type":"roomId","message":"%v"}`, roomId))
 				user.Send(`{"type":"roomNum", "message":"1"}`)
 				user.Send(`{"type":"host"}`)
+				continue
 			case "joinRoom":
 				user, err := c.service.GetUserByClientId(clientId)
 				if err != nil {
 					fmt.Println("no users:", err)
-					user.Send(`{"type":"errorMessage","message":"ルームを作成できませんでした。","error": "get a user Error"}`)
+					user.Send(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`)
 					continue
 				}
 				tempUsers, err := c.service.JoinRoom(receivedMsg.RoomID, user)
@@ -142,6 +143,20 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 				broadcast(*room, "roomNum", "message", len(*room))
 				broadcast(*tempUsers, "message", "message", msg)
 				user.Send(fmt.Sprintf(`{"type":"roomId","message":"%v"}`, user.RoomID))
+				continue
+			case "leaveRoom":
+				user, err := c.service.GetUserByClientId(clientId)
+				if err != nil {
+					fmt.Println("no users:", err)
+					user.Send(`{"type":"errorMessage","message":"ユーザーを取得できませんでした。","error": "couldn't get the users Error"}`)
+					continue
+				}
+				err = c.service.LeaveRoom(user)
+				if err != nil {
+					user.Send(`{"type":"errorMessage","message":"ルームの退出に失敗しました","error": "failed to leave the room Error"}`)
+					continue
+				}
+				continue
 			case "match":
 				//host playerがmatchを送信したら
 				user, err := c.service.GetUserByClientId(clientId)
@@ -174,6 +189,14 @@ func (c *MemoryController) HandleWebSocket(ctx *gin.Context) {
 			case "observe":
 				//roomのobserverに追加
 				//終わるまでか、観戦キャンセルされるまでずっとブロードキャスト
+				continue
+			case "reset":
+				users, err := c.service.GetAllUser()
+				if err != nil {
+					fmt.Println("no users", err)
+					continue
+				}
+				user.Send(fmt.Sprintf(`{"type":"userNum","message":"%d"}`, len(*users)))
 				continue
 			default:
 				user.Send(`{"type":"errorMessage","message":"タイプが適切ではありません","error": "type Error"}`)
